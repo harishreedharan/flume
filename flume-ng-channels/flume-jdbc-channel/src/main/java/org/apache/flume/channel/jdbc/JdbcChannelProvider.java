@@ -17,9 +17,9 @@
  */
 package org.apache.flume.channel.jdbc;
 
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
+import org.apache.flume.conf.Context;
 
 /**
  * Service provider interface for JDBC channel providers.

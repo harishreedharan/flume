@@ -28,12 +28,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.EventDrivenSource;
 import org.apache.flume.Source;
 import org.apache.flume.channel.ChannelProcessor;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 import org.apache.flume.event.EventBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -193,8 +193,8 @@ public class ExecSource extends AbstractSource implements EventDrivenSource,
       try {
         String[] commandArgs = command.split("\\s+");
         Process process = new ProcessBuilder(commandArgs).start();
-        reader = new BufferedReader(
-            new InputStreamReader(process.getInputStream()));
+        reader =
+            new BufferedReader(new InputStreamReader(process.getInputStream()));
 
         String line = null;
 
@@ -205,7 +205,7 @@ public class ExecSource extends AbstractSource implements EventDrivenSource,
 
       } catch (Exception e) {
         logger.error("Failed while running command:" + command
-                      + " - Exception follows.", e);
+            + " - Exception follows.", e);
       } finally {
         if (reader != null) {
           try {

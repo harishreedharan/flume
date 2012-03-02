@@ -20,11 +20,11 @@ package org.apache.flume.sink;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.flume.Context;
 import org.apache.flume.FlumeException;
 import org.apache.flume.Sink;
 import org.apache.flume.SinkProcessor;
 import org.apache.flume.SinkProcessorType;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,11 +35,10 @@ public class SinkProcessorFactory {
   private static final String TYPE = "type";
 
   @SuppressWarnings("unchecked")
-  public static SinkProcessor getProcessor(Context context,
- List<Sink> sinks) {
+  public static SinkProcessor getProcessor(Context context, List<Sink> sinks) {
     Map<String, String> params = context.getParameters();
     SinkProcessor processor;
-    String typeStr = (String) params.get(TYPE);
+    String typeStr = params.get(TYPE);
     SinkProcessorType type = SinkProcessorType.DEFAULT;
     try {
       type = SinkProcessorType.valueOf(typeStr.toUpperCase());
@@ -49,8 +48,9 @@ public class SinkProcessorFactory {
 
     Class<? extends SinkProcessor> processorClass = null;
     try {
-      processorClass = (Class<? extends SinkProcessor>) Class.forName(
-          type.getSinkProcessorClassName());
+      processorClass =
+          (Class<? extends SinkProcessor>) Class.forName(type
+              .getSinkProcessorClassName());
     } catch (Exception ex) {
       throw new FlumeException("Unable to load sink processor type: " + typeStr
           + ", class: " + type.getSinkProcessorClassName(), ex);

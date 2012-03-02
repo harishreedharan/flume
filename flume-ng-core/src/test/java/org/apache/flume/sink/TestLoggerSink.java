@@ -20,11 +20,11 @@
 package org.apache.flume.sink;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.channel.PseudoTxnMemoryChannel;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.event.EventBuilder;
 import org.apache.flume.lifecycle.LifecycleException;
 import org.junit.Before;

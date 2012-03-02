@@ -25,31 +25,30 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class MultiplexingChannelSelector extends AbstractChannelSelector {
 
   public static final String CONFIG_MULTIPLEX_HEADER_NAME = "header";
-  public static final String DEFAULT_MULTIPLEX_HEADER =
-      "flume.selector.header";
+  public static final String DEFAULT_MULTIPLEX_HEADER = "flume.selector.header";
   public static final String CONFIG_PREFIX_MAPPING = "mapping";
   public static final String CONFIG_PREFIX_DEFAULT = "default";
   @SuppressWarnings("unused")
   private static final Logger LOG = LoggerFactory
-    .getLogger(MultiplexingChannelSelector.class);
+      .getLogger(MultiplexingChannelSelector.class);
 
-  private static final List<Channel> EMPTY_LIST =
-      Collections.emptyList();
+  private static final List<Channel> EMPTY_LIST = Collections.emptyList();
 
   private String headerName;
 
   private Map<String, List<Channel>> channelMapping;
 
   private List<Channel> defaultChannels;
+
   @Override
   public List<Channel> getRequiredChannels(Event event) {
     String headerValue = event.getHeaders().get(headerName);
@@ -59,8 +58,8 @@ public class MultiplexingChannelSelector extends AbstractChannelSelector {
 
     List<Channel> channels = channelMapping.get(headerValue);
 
-    //This header value does not point to anything
-    //Return default channel(s) here.
+    // This header value does not point to anything
+    // Return default channel(s) here.
     if (channels == null) {
       channels = defaultChannels;
     }
@@ -75,34 +74,34 @@ public class MultiplexingChannelSelector extends AbstractChannelSelector {
 
   @Override
   public void configure(Context context) {
-    this.headerName = context.getString(CONFIG_MULTIPLEX_HEADER_NAME,
-        DEFAULT_MULTIPLEX_HEADER);
+    this.headerName =
+        context.getString(CONFIG_MULTIPLEX_HEADER_NAME,
+            DEFAULT_MULTIPLEX_HEADER);
 
     Map<String, Channel> channelNameMap = new HashMap<String, Channel>();
     for (Channel ch : getAllChannels()) {
       channelNameMap.put(ch.getName(), ch);
     }
 
-    defaultChannels = getChannelListFromNames(
-        context.getString(CONFIG_PREFIX_DEFAULT),
-        channelNameMap);
+    defaultChannels =
+        getChannelListFromNames(context.getString(CONFIG_PREFIX_DEFAULT),
+            channelNameMap);
 
-    if(defaultChannels.isEmpty()){
+    if (defaultChannels.isEmpty()) {
       throw new FlumeException("Default channel list empty");
     }
 
-    Map<String, String> mapConfig = context.getSubProperties(
-        CONFIG_PREFIX_MAPPING + ".");
+    Map<String, String> mapConfig =
+        context.getSubProperties(CONFIG_PREFIX_MAPPING + ".");
 
     channelMapping = new HashMap<String, List<Channel>>();
 
     for (String headerValue : mapConfig.keySet()) {
-      List<Channel> configuredChannels = getChannelListFromNames(
-          mapConfig.get(headerValue),
-          channelNameMap);
+      List<Channel> configuredChannels =
+          getChannelListFromNames(mapConfig.get(headerValue), channelNameMap);
 
-      //This should not go to default channel(s)
-      //because this seems to be a bad way to configure.
+      // This should not go to default channel(s)
+      // because this seems to be a bad way to configure.
       if (configuredChannels.size() == 0) {
         throw new FlumeException("No channel configured for when "
             + "header value is: " + headerValue);
@@ -112,15 +111,15 @@ public class MultiplexingChannelSelector extends AbstractChannelSelector {
         throw new FlumeException("Selector channel configured twice");
       }
     }
-    //If no mapping is configured, it is ok.
-    //All events will go to the default channel(s).
+    // If no mapping is configured, it is ok.
+    // All events will go to the default channel(s).
 
   }
 
-  //Given a list of channel names as space delimited string,
-  //returns list of channels.
+  // Given a list of channel names as space delimited string,
+  // returns list of channels.
   private List<Channel> getChannelListFromNames(String channels,
-      Map<String, Channel> channelNameMap){
+      Map<String, Channel> channelNameMap) {
     List<Channel> configuredChannels = new ArrayList<Channel>();
     String[] chNames = channels.split(" ");
     for (String name : chNames) {
@@ -128,8 +127,7 @@ public class MultiplexingChannelSelector extends AbstractChannelSelector {
       if (ch != null) {
         configuredChannels.add(ch);
       } else {
-        throw new FlumeException("Selector channel not found: "
-            + name);
+        throw new FlumeException("Selector channel not found: " + name);
       }
     }
     return configuredChannels;

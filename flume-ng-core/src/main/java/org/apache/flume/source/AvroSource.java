@@ -33,12 +33,12 @@ import org.apache.avro.ipc.Server;
 import org.apache.avro.ipc.specific.SpecificResponder;
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDrivenSource;
 import org.apache.flume.Source;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 import org.apache.flume.event.EventBuilder;
 import org.apache.flume.source.avro.AvroFlumeEvent;
 import org.apache.flume.source.avro.AvroSourceProtocol;
@@ -122,8 +122,8 @@ public class AvroSource extends AbstractSource implements EventDrivenSource,
     logger.info("Avro source starting:{}", this);
 
     Responder responder = new SpecificResponder(AvroSourceProtocol.class, this);
-    server = new NettyServer(responder,
-        new InetSocketAddress(bindAddress, port));
+    server =
+        new NettyServer(responder, new InetSocketAddress(bindAddress, port));
 
     server.start();
 

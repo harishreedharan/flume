@@ -19,11 +19,11 @@ package org.apache.flume.sink;
 
 import java.util.List;
 
-import org.apache.flume.Context;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Sink;
 import org.apache.flume.Sink.Status;
 import org.apache.flume.SinkProcessor;
+import org.apache.flume.conf.Context;
 import org.apache.flume.lifecycle.LifecycleState;
 
 import com.google.common.base.Preconditions;

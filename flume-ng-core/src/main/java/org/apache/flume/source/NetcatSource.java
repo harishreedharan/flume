@@ -35,7 +35,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDrivenSource;
@@ -103,9 +102,9 @@ public class NetcatSource extends AbstractSource implements Configurable,
   private String hostName;
   private int port;
 
-  private CounterGroup counterGroup;
+  private final CounterGroup counterGroup;
   private ServerSocketChannel serverSocket;
-  private AtomicBoolean acceptThreadShouldStop;
+  private final AtomicBoolean acceptThreadShouldStop;
   private Thread acceptThread;
   private ExecutorService handlerService;
 
@@ -118,7 +117,7 @@ public class NetcatSource extends AbstractSource implements Configurable,
   }
 
   @Override
-  public void configure(Context context) {
+  public void configure(org.apache.flume.conf.Context context) {
     Configurables.ensureRequiredNonNull(context, "bind", "port");
 
     hostName = context.getString("bind");
@@ -134,8 +133,9 @@ public class NetcatSource extends AbstractSource implements Configurable,
 
     counterGroup.incrementAndGet("open.attempts");
 
-    handlerService = Executors.newCachedThreadPool(new ThreadFactoryBuilder()
-        .setNameFormat("netcat-handler-%d").build());
+    handlerService =
+        Executors.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat(
+            "netcat-handler-%d").build());
 
     try {
       SocketAddress bindPoint = new InetSocketAddress(hostName, port);

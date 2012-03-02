@@ -19,7 +19,6 @@
 
 package org.apache.flume.source.thriftLegacy;
 
-import java.lang.InterruptedException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
@@ -27,47 +26,47 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDrivenSource;
 import org.apache.flume.conf.Configurable;
-import org.apache.flume.source.AbstractSource;
 import org.apache.flume.event.EventBuilder;
-import org.apache.thrift.transport.TServerTransport;
-import org.apache.thrift.transport.TTransportException;
+import org.apache.flume.source.AbstractSource;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TThreadPoolServer;
 import org.apache.thrift.transport.TServerSocket;
-
+import org.apache.thrift.transport.TServerTransport;
+import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.cloudera.flume.handlers.thrift.*;
+import com.cloudera.flume.handlers.thrift.ThriftFlumeEvent;
+import com.cloudera.flume.handlers.thrift.ThriftFlumeEventServer;
 
-public class ThriftLegacySource  extends AbstractSource implements
-    EventDrivenSource, Configurable  {
+public class ThriftLegacySource extends AbstractSource implements
+    EventDrivenSource, Configurable {
 
   static final Logger LOG = LoggerFactory.getLogger(ThriftLegacySource.class);
 
-  //  Old Flume event fields
+  // Old Flume event fields
   static final String HOST = "host";
   static final String TIMESTAMP = "timestamp";
   static final String PRIORITY = "pri";
   static final String NANOS = "nanos";
   static final String OG_EVENT = "FlumeOG";
 
-  private CounterGroup counterGroup;
+  private final CounterGroup counterGroup;
   private String host;
   private int port;
   private TServer server;
   private TServerTransport serverTransport;
   private Thread thriftHandlerThread;
 
-  private class ThriftFlumeEventServerImpl
-        implements ThriftFlumeEventServer.Iface {
-    
-    public void append(ThriftFlumeEvent evt ) {
+  private class ThriftFlumeEventServerImpl implements
+      ThriftFlumeEventServer.Iface {
+
+    @Override
+    public void append(ThriftFlumeEvent evt) {
       if (evt == null) {
         return;
       }
@@ -78,7 +77,7 @@ public class ThriftLegacySource  extends AbstractSource implements
       headers.put(TIMESTAMP, Long.toString(evt.getTimestamp()));
       headers.put(PRIORITY, evt.getPriority().toString());
       headers.put(NANOS, Long.toString(evt.getNanos()));
-      for (Entry<String, ByteBuffer> entry: evt.getFields().entrySet()) {
+      for (Entry<String, ByteBuffer> entry : evt.getFields().entrySet()) {
         headers.put(entry.getKey().toString(), entry.getValue().toString());
       }
       headers.put(OG_EVENT, "yes");
@@ -96,13 +95,14 @@ public class ThriftLegacySource  extends AbstractSource implements
       return;
     }
 
+    @Override
     public void close() {
 
     }
   }
 
   public static class ThriftHandler implements Runnable {
-    private TServer server;
+    private final TServer server;
 
     public ThriftHandler(TServer server) {
       this.server = server;
@@ -115,7 +115,7 @@ public class ThriftLegacySource  extends AbstractSource implements
   }
 
   @Override
-  public void configure(Context context) {
+  public void configure(org.apache.flume.conf.Context context) {
     port = Integer.parseInt(context.getString("port"));
     host = context.getString("host");
   }
@@ -131,8 +131,9 @@ public class ThriftLegacySource  extends AbstractSource implements
       serverTransport = new TServerSocket(bindAddr);
       ThriftFlumeEventServer.Processor processor =
           new ThriftFlumeEventServer.Processor(new ThriftFlumeEventServerImpl());
-      server = new TThreadPoolServer(new TThreadPoolServer.
-          Args(serverTransport).processor(processor));
+      server =
+          new TThreadPoolServer(
+              new TThreadPoolServer.Args(serverTransport).processor(processor));
     } catch (TTransportException e) {
       e.printStackTrace();
       return;

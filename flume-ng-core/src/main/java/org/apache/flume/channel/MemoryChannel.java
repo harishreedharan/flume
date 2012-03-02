@@ -23,9 +23,9 @@ import java.util.concurrent.TimeUnit;
 
 import javax.annotation.concurrent.GuardedBy;
 
-import org.apache.flume.Context;
-import org.apache.flume.Event;
 import org.apache.flume.ChannelException;
+import org.apache.flume.Event;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,8 +38,8 @@ public class MemoryChannel extends BasicChannelSemantics {
   private static final Integer defaultKeepAlive = 3;
 
   public class MemoryTransaction extends BasicTransactionSemantics {
-    private LinkedBlockingDeque<Event> takeList;
-    private LinkedBlockingDeque<Event> putList;
+    private final LinkedBlockingDeque<Event> takeList;
+    private final LinkedBlockingDeque<Event> putList;
 
     public MemoryTransaction(int transCapacity) {
       putList = new LinkedBlockingDeque<Event>(transCapacity);
@@ -48,29 +48,31 @@ public class MemoryChannel extends BasicChannelSemantics {
 
     @Override
     protected void doPut(Event event) {
-      if(!putList.offer(event)) {
-        throw new ChannelException("Put queue for MemoryTransaction of capacity " +
-            putList.size() + " full, consider committing more frequently, " +
-            "increasing capacity or increasing thread count");
+      if (!putList.offer(event)) {
+        throw new ChannelException(
+            "Put queue for MemoryTransaction of capacity " + putList.size()
+                + " full, consider committing more frequently, "
+                + "increasing capacity or increasing thread count");
       }
     }
 
     @Override
     protected Event doTake() throws InterruptedException {
-      if(takeList.remainingCapacity() == 0) {
-        throw new ChannelException("Take list for MemoryTransaction, capacity " +
-            takeList.size() + " full, consider committing more frequently, " +
-            "increasing capacity, or increasing thread count");
+      if (takeList.remainingCapacity() == 0) {
+        throw new ChannelException("Take list for MemoryTransaction, capacity "
+            + takeList.size() + " full, consider committing more frequently, "
+            + "increasing capacity, or increasing thread count");
       }
-      if(!queueStored.tryAcquire(keepAlive, TimeUnit.SECONDS)) {
+      if (!queueStored.tryAcquire(keepAlive, TimeUnit.SECONDS)) {
         return null;
       }
       Event event;
-      synchronized(queueLock) {
+      synchronized (queueLock) {
         event = queue.poll();
       }
-      Preconditions.checkNotNull(event, "Queue.poll returned NULL despite semaphore " +
-          "signalling existence of entry");
+      Preconditions.checkNotNull(event,
+          "Queue.poll returned NULL despite semaphore "
+              + "signalling existence of entry");
       takeList.put(event);
 
       return event;
@@ -79,18 +81,21 @@ public class MemoryChannel extends BasicChannelSemantics {
     @Override
     protected void doCommit() throws InterruptedException {
       int remainingChange = takeList.size() - putList.size();
-      if(remainingChange < 0) {
-        if(!queueRemaining.tryAcquire(-remainingChange, keepAlive, TimeUnit.SECONDS)) {
-          throw new ChannelException("Space for commit to queue couldn't be acquired" +
-              " Sinks are likely not keeping up with sources, or the buffer size is too tight");
+      if (remainingChange < 0) {
+        if (!queueRemaining.tryAcquire(-remainingChange, keepAlive,
+            TimeUnit.SECONDS)) {
+          throw new ChannelException(
+              "Space for commit to queue couldn't be acquired"
+                  + " Sinks are likely not keeping up with sources, or the buffer size is too tight");
         }
       }
       int puts = putList.size();
-      synchronized(queueLock) {
-        if(puts > 0 ) {
-          while(!putList.isEmpty()) {
-            if(!queue.offer(putList.removeFirst())) {
-              throw new RuntimeException("Queue add failed, this shouldn't be able to happen");
+      synchronized (queueLock) {
+        if (puts > 0) {
+          while (!putList.isEmpty()) {
+            if (!queue.offer(putList.removeFirst())) {
+              throw new RuntimeException(
+                  "Queue add failed, this shouldn't be able to happen");
             }
           }
         }
@@ -98,7 +103,7 @@ public class MemoryChannel extends BasicChannelSemantics {
         takeList.clear();
       }
       queueStored.release(puts);
-      if(remainingChange > 0) {
+      if (remainingChange > 0) {
         queueRemaining.release(remainingChange);
       }
 
@@ -107,10 +112,13 @@ public class MemoryChannel extends BasicChannelSemantics {
     @Override
     protected void doRollback() {
       int takes = takeList.size();
-      synchronized(queueLock) {
-        Preconditions.checkState(queue.remainingCapacity() >= takeList.size(), "Not enough space in memory channel " +
-            "queue to rollback takes. This should never happen, please report");
-        while(!takeList.isEmpty()) {
+      synchronized (queueLock) {
+        Preconditions
+            .checkState(
+                queue.remainingCapacity() >= takeList.size(),
+                "Not enough space in memory channel "
+                    + "queue to rollback takes. This should never happen, please report");
+        while (!takeList.isEmpty()) {
           queue.addFirst(takeList.removeLast());
         }
         putList.clear();
@@ -122,24 +130,26 @@ public class MemoryChannel extends BasicChannelSemantics {
 
   // lock to guard queue, mainly needed to keep it locked down during resizes
   // it should never be held through a blocking operation
-  private Integer queueLock;
+  private final Integer queueLock;
 
   @GuardedBy(value = "queueLock")
   private LinkedBlockingDeque<Event> queue;
 
-  // invariant that tracks the amount of space remaining in the queue(with all uncommitted takeLists deducted)
+  // invariant that tracks the amount of space remaining in the queue(with all
+  // uncommitted takeLists deducted)
   // we maintain the remaining permits = queue.remaining - takeList.size()
-  // this allows local threads waiting for space in the queue to commit without denying access to the
+  // this allows local threads waiting for space in the queue to commit without
+  // denying access to the
   // shared lock to threads that would make more space on the queue
   private Semaphore queueRemaining;
   // used to make "reservations" to grab data from the queue.
-  // by using this we can block for a while to get data without locking all other threads out
+  // by using this we can block for a while to get data without locking all
+  // other threads out
   // like we would if we tried to use a blocking call on queue
   private Semaphore queueStored;
   // maximum items in a transaction queue
   private volatile Integer transCapacity;
   private volatile int keepAlive;
-
 
   public MemoryChannel() {
     super();
@@ -150,22 +160,22 @@ public class MemoryChannel extends BasicChannelSemantics {
   public void configure(Context context) {
     String strCapacity = context.getString("capacity");
     Integer capacity = null;
-    if(strCapacity == null) {
+    if (strCapacity == null) {
       capacity = defaultCapacity;
     } else {
       try {
         capacity = Integer.parseInt(strCapacity);
-      } catch(NumberFormatException e) {
+      } catch (NumberFormatException e) {
         capacity = defaultCapacity;
       }
     }
     String strTransCapacity = context.getString("transactionCapacity");
-    if(strTransCapacity == null) {
+    if (strTransCapacity == null) {
       transCapacity = defaultTransCapacity;
     } else {
       try {
         transCapacity = Integer.parseInt(strTransCapacity);
-      } catch(NumberFormatException e) {
+      } catch (NumberFormatException e) {
         transCapacity = defaultTransCapacity;
       }
     }
@@ -179,14 +189,14 @@ public class MemoryChannel extends BasicChannelSemantics {
       keepAlive = Integer.parseInt(strKeepAlive);
     }
 
-    if(queue != null) {
+    if (queue != null) {
       try {
         resizeQueue(capacity);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
       }
     } else {
-      synchronized(queueLock) {
+      synchronized (queueLock) {
         queue = new LinkedBlockingDeque<Event>(capacity);
         queueRemaining = new Semaphore(capacity);
         queueStored = new Semaphore(0);
@@ -196,25 +206,29 @@ public class MemoryChannel extends BasicChannelSemantics {
 
   private void resizeQueue(int capacity) throws InterruptedException {
     int oldCapacity;
-    synchronized(queueLock) {
+    synchronized (queueLock) {
       oldCapacity = queue.size() + queue.remainingCapacity();
     }
 
-    if(oldCapacity == capacity) {
+    if (oldCapacity == capacity) {
       return;
     } else if (oldCapacity > capacity) {
-      if(!queueRemaining.tryAcquire(oldCapacity - capacity, keepAlive, TimeUnit.SECONDS)) {
-        LOGGER.warn("Couldn't acquire permits to downsize the queue, resizing has been aborted");
+      if (!queueRemaining.tryAcquire(oldCapacity - capacity, keepAlive,
+          TimeUnit.SECONDS)) {
+        LOGGER
+            .warn("Couldn't acquire permits to downsize the queue, resizing has been aborted");
       } else {
-        synchronized(queueLock) {
-          LinkedBlockingDeque<Event> newQueue = new LinkedBlockingDeque<Event>(capacity);
+        synchronized (queueLock) {
+          LinkedBlockingDeque<Event> newQueue =
+              new LinkedBlockingDeque<Event>(capacity);
           newQueue.addAll(queue);
           queue = newQueue;
         }
       }
     } else {
-      synchronized(queueLock) {
-        LinkedBlockingDeque<Event> newQueue = new LinkedBlockingDeque<Event>(capacity);
+      synchronized (queueLock) {
+        LinkedBlockingDeque<Event> newQueue =
+            new LinkedBlockingDeque<Event>(capacity);
         newQueue.addAll(queue);
         queue = newQueue;
       }

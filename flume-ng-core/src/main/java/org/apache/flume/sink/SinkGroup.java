@@ -20,10 +20,10 @@ package org.apache.flume.sink;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.flume.Context;
 import org.apache.flume.Sink;
 import org.apache.flume.SinkProcessor;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 
 /**
  * Configuration concept for handling multiple sinks working together.

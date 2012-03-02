@@ -20,8 +20,8 @@ package org.apache.flume.channel.jdbc;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.apache.flume.Context;
 import org.apache.flume.channel.jdbc.impl.JdbcChannelProviderImpl;
+import org.apache.flume.conf.Context;
 
 public final class JdbcChannelProviderFactory {
 

@@ -27,7 +27,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
@@ -53,9 +52,9 @@ public class RollingFileSink extends AbstractSink implements Configurable {
   private OutputStream outputStream;
   private ScheduledExecutorService rollService;
 
-  private CounterGroup counterGroup;
+  private final CounterGroup counterGroup;
 
-  private PathManager pathController;
+  private final PathManager pathController;
   private EventFormatter formatter;
   private volatile boolean shouldRotate;
 
@@ -67,7 +66,7 @@ public class RollingFileSink extends AbstractSink implements Configurable {
   }
 
   @Override
-  public void configure(Context context) {
+  public void configure(org.apache.flume.conf.Context context) {
     String directory = context.getString("sink.directory");
     String rollInterval = context.getString("sink.rollInterval");
 
@@ -89,11 +88,12 @@ public class RollingFileSink extends AbstractSink implements Configurable {
 
     pathController.setBaseDirectory(directory);
 
-    rollService = Executors.newScheduledThreadPool(
-        1,
-        new ThreadFactoryBuilder().setNameFormat(
-            "rollingFileSink-roller-" + Thread.currentThread().getId() + "-%d")
-            .build());
+    rollService =
+        Executors.newScheduledThreadPool(
+            1,
+            new ThreadFactoryBuilder().setNameFormat(
+                "rollingFileSink-roller-" + Thread.currentThread().getId()
+                    + "-%d").build());
 
     /*
      * Every N seconds, mark that it's time to rotate. We purposefully do NOT
@@ -140,8 +140,9 @@ public class RollingFileSink extends AbstractSink implements Configurable {
         logger.debug("Opening output stream for file {}",
             pathController.getCurrentFile());
 
-        outputStream = new BufferedOutputStream(new FileOutputStream(
-            pathController.getCurrentFile()));
+        outputStream =
+            new BufferedOutputStream(new FileOutputStream(
+                pathController.getCurrentFile()));
       } catch (IOException e) {
         throw new EventDeliveryException("Failed to open file "
             + pathController.getCurrentFile() + " while delivering event", e);

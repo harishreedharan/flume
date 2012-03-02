@@ -19,13 +19,12 @@
 package org.apache.flume.channel;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.lifecycle.LifecycleAware;
 import org.apache.flume.lifecycle.LifecycleState;
 
-public abstract class AbstractChannel
-    implements Channel, LifecycleAware, Configurable {
+public abstract class AbstractChannel implements Channel, LifecycleAware,
+    Configurable {
 
   private String name;
 
@@ -61,7 +60,7 @@ public abstract class AbstractChannel
   }
 
   @Override
-  public void configure(Context context) {
+  public void configure(org.apache.flume.conf.Context context) {
 
   }
 }

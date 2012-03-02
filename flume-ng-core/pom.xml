@@ -107,12 +107,13 @@ limitations under the License.
       <groupId>org.apache.avro</groupId>
       <artifactId>avro</artifactId>
     </dependency>
-
+<dependency>
+<groupId>org.apache.flume</groupId>
+<artifactId>flume-ng-configuration</artifactId>
+</dependency>
     <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro-ipc</artifactId>
-    </dependency>
-
-  </dependencies>
-
+</dependency>
+</dependencies>
 </project>

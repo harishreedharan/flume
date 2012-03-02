@@ -23,16 +23,16 @@ import java.util.Map;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelSelector;
-import org.apache.flume.Context;
 import org.apache.flume.FlumeException;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ChannelSelectorFactory {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(
-      ChannelSelectorFactory.class);
+  private static final Logger LOGGER = LoggerFactory
+      .getLogger(ChannelSelectorFactory.class);
 
   public static ChannelSelector create(List<Channel> channels,
       Map<String, String> config) {
@@ -55,7 +55,7 @@ public class ChannelSelectorFactory {
     }
 
     String selectorClassName = type;
-    ChannelSelectorType  selectorType = ChannelSelectorType.OTHER;
+    ChannelSelectorType selectorType = ChannelSelectorType.OTHER;
 
     try {
       selectorType = ChannelSelectorType.valueOf(type.toUpperCase());

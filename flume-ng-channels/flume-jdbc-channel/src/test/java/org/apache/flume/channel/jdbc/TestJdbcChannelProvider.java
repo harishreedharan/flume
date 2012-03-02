@@ -32,10 +32,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
 import org.apache.flume.channel.jdbc.impl.JdbcChannelProviderImpl;
+import org.apache.flume.conf.Context;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;

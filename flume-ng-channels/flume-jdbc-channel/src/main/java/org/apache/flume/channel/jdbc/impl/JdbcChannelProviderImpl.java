@@ -37,13 +37,13 @@ import org.apache.commons.dbcp.PoolingDataSource;
 import org.apache.commons.pool.KeyedObjectPoolFactory;
 import org.apache.commons.pool.impl.GenericKeyedObjectPoolFactory;
 import org.apache.commons.pool.impl.GenericObjectPool;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.channel.jdbc.ConfigurationConstants;
 import org.apache.flume.channel.jdbc.DatabaseType;
 import org.apache.flume.channel.jdbc.JdbcChannelException;
 import org.apache.flume.channel.jdbc.JdbcChannelProvider;
 import org.apache.flume.channel.jdbc.TransactionIsolation;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

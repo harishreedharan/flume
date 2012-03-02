@@ -24,11 +24,11 @@ import java.util.Map;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.event.EventBuilder;
 import org.junit.Assert;
 import org.junit.Before;

@@ -30,13 +30,13 @@ import junit.framework.Assert;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelSelector;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
 import org.apache.flume.channel.ChannelProcessor;
 import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.channel.ReplicatingChannelSelector;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.source.AvroSource;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;

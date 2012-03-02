@@ -22,12 +22,12 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
+import org.apache.flume.conf.Context;
 
 /**
- * Replicating channel selector. This selector allows the event to be placed
- * in all the channels that the source is configured with.
+ * Replicating channel selector. This selector allows the event to be placed in
+ * all the channels that the source is configured with.
  */
 public class ReplicatingChannelSelector extends AbstractChannelSelector {
 

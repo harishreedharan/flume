@@ -24,7 +24,6 @@ import java.util.List;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelSelector;
-import org.apache.flume.Context;
 import org.apache.flume.Sink;
 import org.apache.flume.SinkProcessor;
 import org.apache.flume.SinkRunner;
@@ -34,6 +33,7 @@ import org.apache.flume.channel.ChannelProcessor;
 import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.channel.ReplicatingChannelSelector;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.lifecycle.LifecycleAware;
 import org.apache.flume.lifecycle.LifecycleController;
 import org.apache.flume.lifecycle.LifecycleException;

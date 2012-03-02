@@ -24,11 +24,11 @@ import java.util.Map.Entry;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-import org.apache.flume.Context;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Sink;
-import org.apache.flume.SinkProcessor;
 import org.apache.flume.Sink.Status;
+import org.apache.flume.SinkProcessor;
+import org.apache.flume.conf.Context;
 import org.apache.flume.lifecycle.LifecycleState;
 
 /**
@@ -60,7 +60,7 @@ public class FailoverSinkProcessor implements SinkProcessor {
 
   @Override
   public void start() {
-    for(Sink s : sinks.values()) {
+    for (Sink s : sinks.values()) {
       s.start();
     }
     state = LifecycleState.START;
@@ -68,7 +68,7 @@ public class FailoverSinkProcessor implements SinkProcessor {
 
   @Override
   public void stop() {
-    for(Sink s : sinks.values()) {
+    for (Sink s : sinks.values()) {
       s.stop();
     }
     state = LifecycleState.STOP;
@@ -88,7 +88,7 @@ public class FailoverSinkProcessor implements SinkProcessor {
       String priStr = PRIORITY_PREFIX + entry.getKey();
       Integer priority;
       try {
-        priority =  Integer.parseInt(context.getString(priStr));
+        priority = Integer.parseInt(context.getString(priStr));
       } catch (NumberFormatException e) {
         priority = --nextPrio;
       } catch (NullPointerException e) {
@@ -102,7 +102,7 @@ public class FailoverSinkProcessor implements SinkProcessor {
   @Override
   public Status process() throws EventDeliveryException {
     Status ret = null;
-    while(activeSink != null) {
+    while (activeSink != null) {
       try {
         ret = activeSink.process();
         return ret;
@@ -127,16 +127,17 @@ public class FailoverSinkProcessor implements SinkProcessor {
 
       }
     }
-    throw new EventDeliveryException("All sinks failed to process, " +
-        "nothing left to failover to");
+    throw new EventDeliveryException("All sinks failed to process, "
+        + "nothing left to failover to");
   }
 
   private Sink moveActiveToDeadAndGetNext() {
     Integer key = liveSinks.lastKey();
     deadSinks.put(key, activeSink);
     liveSinks.remove(key);
-    if(liveSinks.isEmpty()) return null;
-    if(liveSinks.lastKey() != null) {
+    if (liveSinks.isEmpty())
+      return null;
+    if (liveSinks.lastKey() != null) {
       return liveSinks.get(liveSinks.lastKey());
     } else {
       return null;

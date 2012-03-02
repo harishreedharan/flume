@@ -23,7 +23,6 @@ import java.util.List;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelSelector;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.PollableSource;
@@ -31,6 +30,7 @@ import org.apache.flume.channel.ChannelProcessor;
 import org.apache.flume.channel.PseudoTxnMemoryChannel;
 import org.apache.flume.channel.ReplicatingChannelSelector;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.lifecycle.LifecycleException;
 import org.junit.Assert;
 import org.junit.Before;

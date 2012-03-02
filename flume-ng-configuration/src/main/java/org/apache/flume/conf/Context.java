@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.flume;
+package org.apache.flume.conf;
 
 import java.util.Collections;
 import java.util.HashMap;

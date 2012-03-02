@@ -35,11 +35,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.flume.Channel;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 import org.apache.flume.formatter.output.BucketPath;
 import org.apache.flume.sink.AbstractSink;
 import org.apache.flume.sink.FlumeFormatter;
@@ -64,7 +64,8 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
   static final long defaultTxnEventMax = 100;
   static final String defaultFileType = HDFSWriterFactory.SequenceFileType;
   static final int defaultMaxOpenFiles = 5000;
-  static final String defaultWriteFormat = HDFSFormatterFactory.hdfsWritableFormat;
+  static final String defaultWriteFormat =
+      HDFSFormatterFactory.hdfsWritableFormat;
   static final long defaultAppendTimeout = 1000;
 
   private long rollInterval;
@@ -78,7 +79,7 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
   private String path;
   private int maxOpenFiles;
   private String writeFormat;
-  private HDFSWriterFactory myWriterFactory;
+  private final HDFSWriterFactory myWriterFactory;
   private ExecutorService executor;
   private long appendTimeout;
 
@@ -89,6 +90,7 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
   private class WriterLinkedHashMap extends LinkedHashMap<String, BucketWriter> {
     private static final long serialVersionUID = 1L;
 
+    @Override
     protected boolean removeEldestEntry(Entry<String, BucketWriter> eldest) {
       /*
        * FIXME: We probably shouldn't shared state this way. Make this class
@@ -118,7 +120,7 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
   public HDFSEventSink() {
     myWriterFactory = new HDFSWriterFactory();
   }
-  
+
   public HDFSEventSink(HDFSWriterFactory newWriterFactory) {
     myWriterFactory = newWriterFactory;
   }
@@ -216,8 +218,8 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
       return true;
     }
     if (simpleName.endsWith("Codec")) {
-      String prefix = simpleName.substring(0,
-          simpleName.length() - "Codec".length());
+      String prefix =
+          simpleName.substring(0, simpleName.length() - "Codec".length());
       if (prefix.equalsIgnoreCase(codecName)) {
         return true;
       }
@@ -227,8 +229,8 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
 
   private static CompressionCodec getCodec(String codecName) {
     Configuration conf = new Configuration();
-    List<Class<? extends CompressionCodec>> codecs = CompressionCodecFactory
-        .getCodecClasses(conf);
+    List<Class<? extends CompressionCodec>> codecs =
+        CompressionCodecFactory.getCodecClasses(conf);
     // Wish we could base this on DefaultCodec but appears not all codec's
     // extend DefaultCodec(Lzo)
     CompressionCodec codec = null;
@@ -262,16 +264,20 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
     return codec;
   }
 
-  /* 
-   * Execute the append on a separate thread and wait for the completion for the specified amount of time
-   * In case of timeout, cancel the append and throw an IOException
+  /*
+   * Execute the append on a separate thread and wait for the completion for the
+   * specified amount of time In case of timeout, cancel the append and throw an
+   * IOException
    */
-  private BucketFlushStatus backgroundAppend(final BucketWriter bw, final Event e) throws IOException, InterruptedException {
-    Future<BucketFlushStatus> future = executor.submit(new Callable<BucketFlushStatus>() {
-      public BucketFlushStatus call() throws Exception {
-        return bw.append(e);
-      }
-    });
+  private BucketFlushStatus backgroundAppend(final BucketWriter bw,
+      final Event e) throws IOException, InterruptedException {
+    Future<BucketFlushStatus> future =
+        executor.submit(new Callable<BucketFlushStatus>() {
+          @Override
+          public BucketFlushStatus call() throws Exception {
+            return bw.append(e);
+          }
+        });
 
     try {
       if (appendTimeout > 0) {
@@ -302,7 +308,7 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
           "Blocked append interrupted by rotation event");
     } catch (InterruptedException ex) {
       LOG.warn("Unexpected Exception " + ex.getMessage(), ex);
-      throw (InterruptedException) ex;
+      throw ex;
     }
   }
 
@@ -333,8 +339,8 @@ public class HDFSEventSink extends AbstractSink implements Configurable {
         // we haven't seen this file yet, so open it and cache the handle
         if (bw == null) {
           HDFSWriter writer = myWriterFactory.getWriter(fileType);
-          FlumeFormatter formatter = HDFSFormatterFactory
-              .getFormatter(writeFormat);
+          FlumeFormatter formatter =
+              HDFSFormatterFactory.getFormatter(writeFormat);
           bw = new BucketWriter(rollInterval, rollSize, rollCount, batchSize);
           bw.open(realPath, codeC, compType, writer, formatter);
           sfWriters.put(realPath, bw);

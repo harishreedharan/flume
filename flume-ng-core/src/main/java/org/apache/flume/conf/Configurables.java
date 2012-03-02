@@ -19,7 +19,6 @@
 
 package org.apache.flume.conf;
 
-import org.apache.flume.Context;
 
 /**
  * Methods for working with {@link Configurable}s.

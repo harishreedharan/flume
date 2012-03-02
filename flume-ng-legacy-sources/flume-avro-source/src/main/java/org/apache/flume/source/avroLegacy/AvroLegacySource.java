@@ -27,24 +27,23 @@ import java.util.Map.Entry;
 
 import org.apache.avro.ipc.HttpServer;
 import org.apache.avro.ipc.specific.SpecificResponder;
-import org.apache.flume.Context;
+import org.apache.flume.ChannelException;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDrivenSource;
 import org.apache.flume.Source;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 import org.apache.flume.event.EventBuilder;
 import org.apache.flume.source.AbstractSource;
-
-import com.cloudera.flume.handlers.avro.AvroFlumeOGEvent;
-import com.cloudera.flume.handlers.avro.FlumeOGEventAvroServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.flume.ChannelException;
-
+import com.cloudera.flume.handlers.avro.AvroFlumeOGEvent;
+import com.cloudera.flume.handlers.avro.FlumeOGEventAvroServer;
 /**
  * <p>
- * A {@link Source} implementation that receives Avro events from Avro sink of Flume OG
+ * A {@link Source} implementation that receives Avro events from Avro sink of
+ * Flume OG
  * </p>
  * <p>
  * <b>Configuration options</b>
@@ -77,19 +76,19 @@ import org.apache.flume.ChannelException;
  * </p>
  */
 
-public class AvroLegacySource extends AbstractSource implements EventDrivenSource,
-    Configurable, FlumeOGEventAvroServer {
+public class AvroLegacySource extends AbstractSource implements
+    EventDrivenSource, Configurable, FlumeOGEventAvroServer {
 
   static final Logger LOG = LoggerFactory.getLogger(AvroLegacySource.class);
 
-  //  Flume OG event fields
+  // Flume OG event fields
   public static final String HOST = "host";
   public static final String TIMESTAMP = "timestamp";
   public static final String PRIORITY = "pri";
   public static final String NANOS = "nanos";
   public static final String OG_EVENT = "FlumeOG";
 
-  private CounterGroup counterGroup;
+  private final CounterGroup counterGroup;
   protected FlumeOGEventAvroServer avroClient;
   private String host;
   private int port;
@@ -121,7 +120,8 @@ public class AvroLegacySource extends AbstractSource implements EventDrivenSourc
   }
 
   @Override
-  public Void append( AvroFlumeOGEvent evt ) throws org.apache.avro.AvroRemoteException {
+  public Void append(AvroFlumeOGEvent evt)
+      throws org.apache.avro.AvroRemoteException {
     counterGroup.incrementAndGet("rpc.received");
     Map<String, String> headers = new HashMap<String, String>();
 
@@ -130,7 +130,7 @@ public class AvroLegacySource extends AbstractSource implements EventDrivenSourc
     headers.put(TIMESTAMP, evt.getTimestamp().toString());
     headers.put(PRIORITY, evt.getPriority().toString());
     headers.put(NANOS, evt.getNanos().toString());
-    for (Entry<CharSequence, ByteBuffer> entry: evt.getFields().entrySet()) {
+    for (Entry<CharSequence, ByteBuffer> entry : evt.getFields().entrySet()) {
       headers.put(entry.getKey().toString(), entry.getValue().toString());
     }
     headers.put(OG_EVENT, "yes");

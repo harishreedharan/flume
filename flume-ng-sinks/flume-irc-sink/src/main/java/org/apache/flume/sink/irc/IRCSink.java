@@ -21,7 +21,6 @@ import java.io.IOException;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
@@ -57,65 +56,83 @@ public class IRCSink extends AbstractSink implements Configurable {
   private String chan;
   private Boolean splitLines;
   private String splitChars;
-  
-  private CounterGroup counterGroup;
+
+  private final CounterGroup counterGroup;
 
   static public class IRCConnectionListener implements IRCEventListener {
 
+    @Override
     public void onRegistered() {
     }
 
+    @Override
     public void onDisconnected() {
       logger.error("IRC sink disconnected");
     }
 
+    @Override
     public void onError(String msg) {
       logger.error("IRC sink error: {}", msg);
     }
 
+    @Override
     public void onError(int num, String msg) {
       logger.error("IRC sink error: {} - {}", num, msg);
     }
 
+    @Override
     public void onInvite(String chan, IRCUser u, String nickPass) {
     }
 
+    @Override
     public void onJoin(String chan, IRCUser u) {
     }
 
+    @Override
     public void onKick(String chan, IRCUser u, String nickPass, String msg) {
     }
 
+    @Override
     public void onMode(IRCUser u, String nickPass, String mode) {
     }
 
+    @Override
     public void onMode(String chan, IRCUser u, IRCModeParser mp) {
     }
 
+    @Override
     public void onNick(IRCUser u, String nickNew) {
     }
 
+    @Override
     public void onNotice(String target, IRCUser u, String msg) {
     }
 
+    @Override
     public void onPart(String chan, IRCUser u, String msg) {
     }
 
+    @Override
     public void onPrivmsg(String chan, IRCUser u, String msg) {
     }
 
+    @Override
     public void onQuit(IRCUser u, String msg) {
     }
 
+    @Override
     public void onReply(int num, String value, String msg) {
     }
 
+    @Override
     public void onTopic(String chan, IRCUser u, String topic) {
     }
 
+    @Override
     public void onPing(String p) {
     }
 
+    @Override
     public void unknown(String a, String b, String c, String d) {
     }
   }
@@ -124,7 +141,8 @@ public class IRCSink extends AbstractSink implements Configurable {
     counterGroup = new CounterGroup();
   }
 
-  public void configure(Context context) {
+  @Override
+  public void configure(org.apache.flume.conf.Context context) {
     hostname = context.getString("hostname");
     String portStr = context.getString("port");
     nick = context.getString("nick");
@@ -144,7 +162,7 @@ public class IRCSink extends AbstractSink implements Configurable {
     if (splitChars == null) {
       splitChars = DEFAULT_SPLIT_CHARS;
     }
-    
+
     Preconditions.checkState(hostname != null, "No hostname specified");
     Preconditions.checkState(nick != null, "No nick specified");
     Preconditions.checkState(chan != null, "No chan specified");
@@ -152,11 +170,11 @@ public class IRCSink extends AbstractSink implements Configurable {
 
   private void createConnection() throws IOException {
     if (connection == null) {
-      logger.debug(
-          "Creating new connection to hostname:{} port:{}",
-          hostname, port);
-      connection = new IRCConnection(hostname, new int[] { port },
-          password, nick, user, name);
+      logger.debug("Creating new connection to hostname:{} port:{}", hostname,
+          port);
+      connection =
+          new IRCConnection(hostname, new int[] { port }, password, nick, user,
+              name);
       connection.addIRCEventListener(new IRCConnectionListener());
       connection.setEncoding("UTF-8");
       connection.setPong(true);
@@ -183,8 +201,8 @@ public class IRCSink extends AbstractSink implements Configurable {
     try {
       createConnection();
     } catch (Exception e) {
-      logger.error("Unable to create irc client using hostname:"
-          + hostname + " port:" + port + ". Exception follows.", e);
+      logger.error("Unable to create irc client using hostname:" + hostname
+          + " port:" + port + ". Exception follows.", e);
 
       /* Try to prevent leaking resources. */
       destroyConnection();
@@ -206,23 +224,24 @@ public class IRCSink extends AbstractSink implements Configurable {
 
     super.stop();
 
-    logger.debug("IRC sink {} stopped. Metrics:{}", this.getName(), counterGroup);
+    logger.debug("IRC sink {} stopped. Metrics:{}", this.getName(),
+        counterGroup);
   }
 
   private void sendLine(Event event) {
     String body = new String(event.getBody());
-    
+
     if (splitLines) {
       String[] lines = body.split(splitChars);
-      for(String line: lines) {
+      for (String line : lines) {
         connection.doPrivmsg(IRC_CHANNEL_PREFIX + this.chan, line);
       }
     } else {
       connection.doPrivmsg(IRC_CHANNEL_PREFIX + this.chan, body);
     }
-    
+
   }
-  
+
   @Override
   public Status process() throws EventDeliveryException {
     Status status = Status.READY;
@@ -247,13 +266,11 @@ public class IRCSink extends AbstractSink implements Configurable {
 
     } catch (ChannelException e) {
       transaction.rollback();
-      logger.error(
-          "Unable to get event from channel. Exception follows.", e);
+      logger.error("Unable to get event from channel. Exception follows.", e);
       status = Status.BACKOFF;
     } catch (Exception e) {
       transaction.rollback();
-      logger.error(
-          "Unable to communicate with IRC server. Exception follows.",
+      logger.error("Unable to communicate with IRC server. Exception follows.",
           e);
       status = Status.BACKOFF;
       destroyConnection();

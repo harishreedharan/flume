@@ -31,7 +31,6 @@ import java.util.StringTokenizer;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelSelector;
-import org.apache.flume.Context;
 import org.apache.flume.Sink;
 import org.apache.flume.SinkProcessor;
 import org.apache.flume.SinkRunner;
@@ -40,6 +39,7 @@ import org.apache.flume.SourceRunner;
 import org.apache.flume.channel.ChannelProcessor;
 import org.apache.flume.channel.ChannelSelectorFactory;
 import org.apache.flume.conf.Configurables;
+import org.apache.flume.conf.Context;
 import org.apache.flume.conf.file.AbstractFileConfigurationProvider;
 import org.apache.flume.conf.file.SimpleNodeConfiguration;
 import org.apache.flume.conf.properties.FlumeConfiguration.AgentConfiguration;

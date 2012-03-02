@@ -33,13 +33,13 @@ import org.apache.avro.ipc.Transceiver;
 import org.apache.avro.ipc.specific.SpecificRequestor;
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.CounterGroup;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Sink;
 import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurable;
+import org.apache.flume.conf.Context;
 import org.apache.flume.source.avro.AvroFlumeEvent;
 import org.apache.flume.source.avro.AvroSourceProtocol;
 import org.slf4j.Logger;
@@ -151,8 +151,8 @@ public class AvroSink extends AbstractSink implements Configurable {
 
     if (client == null) {
       logger.debug("Creating Avro client with tranceiver:{}", transceiver);
-      client = SpecificRequestor.getClient(AvroSourceProtocol.class,
-          transceiver);
+      client =
+          SpecificRequestor.getClient(AvroSourceProtocol.class, transceiver);
     }
   }
 

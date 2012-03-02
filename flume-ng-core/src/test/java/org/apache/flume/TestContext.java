@@ -21,6 +21,7 @@ package org.apache.flume;
 
 import static org.junit.Assert.*;
 
+import org.apache.flume.conf.Context;
 import org.junit.Before;
 import org.junit.Test;
 

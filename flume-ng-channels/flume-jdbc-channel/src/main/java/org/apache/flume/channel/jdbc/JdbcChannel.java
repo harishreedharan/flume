@@ -18,10 +18,10 @@
 package org.apache.flume.channel.jdbc;
 
 import org.apache.flume.ChannelException;
-import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
 import org.apache.flume.channel.AbstractChannel;
+import org.apache.flume.conf.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 /**
