@@ -26,7 +26,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Map.Entry;
 
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
@@ -75,16 +74,21 @@ public abstract class BasicTransactionSemantics implements Transaction {
   private long initialThreadId;
   protected List<Event> events;
 
-  private Map<TransactionListenerFactory, TransactionListener> toCallOnCommit;
+  private Map<TransactionListenerFactory, TransactionListener> toCallOnComplete;
   private Set<TransactionListenerFactory> toCallOnPut;
   private Set<TransactionListenerFactory> toCallOnTake;
   private Map<String, Set<TransactionListenerFactory>> headerFactoryMap;
+  boolean hasTxnListener = false;
   public Map<String, Set<TransactionListenerFactory>> getHeaderFactoryMap() {
     return headerFactoryMap;
   }
   protected void setHeaderFactoryMap(
       Map<String, Set<TransactionListenerFactory>> headerFactoryMap) {
     this.headerFactoryMap = headerFactoryMap;
+  }
+
+  protected void setHasTxnListener(){
+    this.hasTxnListener = true;
   }
   protected void doBegin() throws InterruptedException {}
   protected abstract void doPut(Event event) throws InterruptedException;
@@ -97,7 +101,7 @@ public abstract class BasicTransactionSemantics implements Transaction {
     state = State.NEW;
     initialThreadId = Thread.currentThread().getId();
     events = new ArrayList<Event>();
-    toCallOnCommit = new HashMap<TransactionListenerFactory,
+    toCallOnComplete = new HashMap<TransactionListenerFactory,
         TransactionListener>();
   }
 
@@ -131,17 +135,23 @@ public abstract class BasicTransactionSemantics implements Transaction {
       if(event == null){
         return;
       }
-      Set<TransactionListenerFactory> factories =
-          findheaders(event.getHeaders(), false);
-      for(TransactionListenerFactory factory: factories){
-        TransactionListener listener;
-        if(!toCallOnCommit.keySet().contains(factory)){
-          listener = factory.createTransactionListener();
-          toCallOnCommit.put(factory, listener);
-        } else {
-          listener = toCallOnCommit.get(factory);
+      if(this.hasTxnListener){
+        try{
+          Set<TransactionListenerFactory> factories =
+              findheaders(event.getHeaders(), false);
+          for(TransactionListenerFactory factory: factories){
+            TransactionListener listener;
+            if(!toCallOnComplete.keySet().contains(factory)){
+              listener = factory.createTransactionListener();
+              toCallOnComplete.put(factory, listener);
+            } else {
+              listener = toCallOnComplete.get(factory);
+            }
+            listener.onPut(Collections.unmodifiableMap(event.getHeaders()));
+          }
+        } catch (Exception e) {
+          throw new ChannelException(e.toString() , e);
         }
-        listener.onPut(Collections.unmodifiableMap(event.getHeaders()));
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -166,17 +176,23 @@ public abstract class BasicTransactionSemantics implements Transaction {
       if(event == null){
         return event;
       }
-      Set<TransactionListenerFactory> factories =
-          findheaders(event.getHeaders(), true);
-      for(TransactionListenerFactory factory: factories){
-        TransactionListener listener;
-        if(!toCallOnCommit.keySet().contains(factory)){
-          listener = factory.createTransactionListener();
-          toCallOnCommit.put(factory, listener);
-        } else {
-          listener = toCallOnCommit.get(factory);
+      if(this.hasTxnListener){
+        try{
+          Set<TransactionListenerFactory> factories =
+              findheaders(event.getHeaders(), true);
+          for(TransactionListenerFactory factory: factories){
+            TransactionListener listener;
+            if(!toCallOnComplete.keySet().contains(factory)){
+              listener = factory.createTransactionListener();
+              toCallOnComplete.put(factory, listener);
+            } else {
+              listener = toCallOnComplete.get(factory);
+            }
+            listener.onTake(Collections.unmodifiableMap(event.getHeaders()));
+          }
+        } catch (Exception e) {
+          throw new ChannelException(e.toString(), e);
         }
-        listener.onTake(Collections.unmodifiableMap(event.getHeaders()));
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -218,8 +234,14 @@ public abstract class BasicTransactionSemantics implements Transaction {
 
     try {
       doCommit();
-      for(TransactionListenerFactory factory: toCallOnCommit.keySet()){
-        toCallOnCommit.get(factory).onTransactionCommit();
+      if(this.hasTxnListener){
+        try {
+          for(TransactionListenerFactory factory: toCallOnComplete.keySet()){
+            toCallOnComplete.get(factory).onTransactionCommit();
+          }
+        } catch (Exception e){
+          throw new ChannelException(e.toString(), e);
+        }
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -238,6 +260,15 @@ public abstract class BasicTransactionSemantics implements Transaction {
     state = State.COMPLETED;
     try {
       doRollback();
+      if(this.hasTxnListener){
+        try {
+          for(TransactionListenerFactory factory: toCallOnComplete.keySet()){
+            toCallOnComplete.get(factory).onTransactionCommit();
+          }
+        } catch (Exception e) {
+          throw new ChannelException(e.toString(), e);
+        }
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new ChannelException(e.toString(), e);

@@ -26,7 +26,7 @@ public class DummyTransactionListenerFactory
 implements TransactionListenerFactory {
 
   private String name;
-  private int i = 0;
+
   @Override
   public void setName(String name) {
     this.name = name;

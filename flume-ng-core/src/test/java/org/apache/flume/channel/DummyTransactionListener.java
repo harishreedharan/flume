@@ -37,6 +37,7 @@ public class DummyTransactionListener implements TransactionListener {
   public static String COMMITTED = "committed";
   public static String PUT = "put";
   public static String TOOK = "took";
+  public static String ROLLEDBACK = "rolled back";
   public static CounterGroup counterGroup = new CounterGroup();
   private String factoryName;
 
@@ -72,6 +73,13 @@ public class DummyTransactionListener implements TransactionListener {
   public void configure(Context context) {
     // TODO Auto-generated method stub
 
+  }
+
+  @Override
+  public void onTransactionRollback() {
+    System.out.println(factoryName + "-" + ROLLEDBACK);
+
+    counterGroup.incrementAndGet(factoryName + "-" + ROLLEDBACK);
   }
 
 

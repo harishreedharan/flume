@@ -20,15 +20,25 @@ package org.apache.flume;
 import java.util.Map;
 
 import org.apache.flume.conf.Configurable;
-
+/**
+ * Interface for transaction listener. A listener's onPut
+ * will be called whenever a put happens in the transaction, and onTake whenever
+ * a take happens. If at least a put/take has happened then the
+ * onTransactionCommit or onTransactionRollback is called at the end of the
+ * transaction based on if the transaction was committed or rolled back.
+ *
+ */
 public interface TransactionListener extends Configurable {
 
   public void onTransactionCommit();
 
+  public void onTransactionRollback();
   /**
-   * This will be called with a Map that does not support <tt>put()</tt>
-   * or <tt>putAll()<tt>
-   * @param eventHeaders
+   * This will be called with a Map that does not support modification.
+   * Any attempt to modify it will cause an Exception to be thrown.
+   * @param eventHeaders - the headers of the event that caused this listener
+   * to be called. The listener will be called exactly once, even if more
+   * than one header matches.
    */
   public void onPut(Map<String, String> eventHeaders);
 
