@@ -40,7 +40,75 @@ import com.google.common.base.Preconditions;
  * implied thread-local semantics of the {@link Transaction} class,
  * which is required to extend {@link BasicTransactionSemantics}.
  * </p>
+ * Each channel can specify, in the configuration any number of
+ * transaction listener factories. Each transaction listener factory instance
+ * is associated with a name, and its properties and headers are defined
+ * by referencing the name(see below for format and example).
+ * A new transaction listener is created
+ * from these factory instances for a transaction if an event with headers
+ * matching
+ * the header for that factory passes the channel boundary. Each factory can
+ * be associated with more than one header, and a transaction listener created
+ * by that factory
+ * will be called(onPut/take and on commit) exactly once if one or
+ * more of the event headers match the
+ * headers specified for the factory in the configuration. Every factory instance will create exactly one
+ * instance of the listener, which will be called exactly once with the full
+ * headers from the event. If a different
+ * listener instance is to be called for each of the headers for the same
+ * factory class,
+ * a different instance of the factory should be configured with
+ * each of the headers. If a set of headers are configured with
+ * one factory instance, then only one call is made to the listener
+ * created by the factory (see example). Sets of headers defined for
+ * different factory instances can overlap. A transaction
+ * listener factory also accepts a parameter, "callon" which can have one
+ * of the two values: <tt>put</tt> or <tt>take</tt>.
+ * If the value is not one of these two or
+ * is not defined, then it defaults to <tt>take</tt>. If <tt>put</tt>
+ * is specified, an instance of this factory is called if an event matching at
+ * least one of the factory headers is put into the channel, and if
+ * <tt>put</tt> is specified, an instance of this factory is called if an
+ * event matching at
+ * least one of the factory headers is taken from the channel.
+ * <p>If <tt>headers
+ * </tt> and <tt>type</tt> are not specified, the listener factory is never
+ * used. You can have multiple factory instances configured for the same (set of)
+ * headers, and have one factory instance configured for the multiple headers.
+ * You can also have multiple factory instances configured to use the
+ * same factory class. This will cause the creation of one listener per
+ * factory instance, per transaction, this way you can have different
+ * sets of headers call different instances of the same listener class.
+ * This accepts configuration parameters in the following way: <p>
+ *
+ * <pre>
+ * agent.channels.channel.listenerfactories = a b c
+ * agent.channels.channel.listenerfactories.a.type = fully.qualified.classname
+ * agent.channels.channel.listenerfactories.a.headers = space separated list of headers
+ * agent.channels.channel.listenerfactories.a.callon = put/take
+ * </pre><p>
+ * Example: <p>
+ * <pre>
+ * agent.channels.channel.listenerfactories = a b c
+ * agent.channels.channel.listenerfactories.a.type  = org.apache.channel.memory.DummyTransactionListener
+ * agent.channels.channel.listenerfactories.a.callon = put
+ * agent.channels.channel.listenerfactories.a.headers = test1 test5
+ * agent.channels.channel.listenerfactories.b.type  = org.apache.channel.memory.SmartTransactionListener
+ * agent.channels.channel.listenerfactories.b.callon = take
+ * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
+ *
+ * agent.channels.channel.listenerfactories.b.type  = org.apache.channel.memory.DummyTransactionListener
+ * agent.channels.channel.listenerfactories.b.callon = take
+ * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
+ * <pre> <p>
+ *
+ * <strong>Note: </strong> In the above description, calling a transaction
+ * listener means that its onPut/onTake methods are called on put/take and
+ * its onTransactionCommit/onTransactionRollback are called when the
+ * transaction is committed or rolled back </p>
+ * </p>
  */
+
 public abstract class BasicChannelSemantics extends AbstractChannel {
 
   private ThreadLocal<BasicTransactionSemantics> currentTransaction
@@ -64,74 +132,6 @@ public abstract class BasicChannelSemantics extends AbstractChannel {
    * this {@link Channel} instance.  Use this method to delay the
    * initialization resources until just before the first
    * transaction begins. <p>
-   *
-   * Each channel can specify, in the configuration any number of
-   * transaction listener factories. Each transaction listener factory instance
-   * is associated with a name, and its properties and headers are defined
-   * by referencing the name(see below for format and example).
-   * A new transaction listener is created
-   * from these factory instances for a transaction if an event with headers
-   * matching
-   * the header for that factory passes the channel boundary. Each factory can
-   * be associated with more than one header, and a transaction listener created
-   * by that factory
-   * will be called(onPut/take and on commit) exactly once if one or
-   * more of the event headers match the
-   * headers specified for the factory in the configuration. Every factory instance will create exactly one
-   * instance of the listener, which will be called exactly once with the full
-   * headers from the event. If a different
-   * listener instance is to be called for each of the headers for the same
-   * factory class,
-   * a different instance of the factory should be configured with
-   * each of the headers. If a set of headers are configured with
-   * one factory instance, then only one call is made to the listener
-   * created by the factory (see example). Sets of headers defined for
-   * different factory instances can overlap. A transaction
-   * listener factory also accepts a parameter, "callon" which can have one
-   * of the two values: <tt>put</tt> or <tt>take</tt>.
-   * If the value is not one of these two or
-   * is not defined, then it defaults to <tt>take</tt>. If <tt>put</tt>
-   * is specified, an instance of this factory is called if an event matching at
-   * least one of the factory headers is put into the channel, and if
-   * <tt>put</tt> is specified, an instance of this factory is called if an
-   * event matching at
-   * least one of the factory headers is taken from the channel.
-   * <p>If <tt>headers
-   * </tt> and <tt>type</tt> are not specified, the listener factory is never
-   * used. You can have multiple factory instances configured for the same (set of)
-   * headers, and have one factory instance configured for the multiple headers.
-   * You can also have multiple factory instances configured to use the
-   * same factory class. This will cause the creation of one listener per
-   * factory instance, per transaction, this way you can have different
-   * sets of headers call different instances of the same listener class.
-   * This accepts configuration parameters in the following way: <p>
-   *
-   * <pre>
-   * agent.channels.channel.listenerfactories = a b c
-   * agent.channels.channel.listenerfactories.a.type = fully.qualified.classname
-   * agent.channels.channel.listenerfactories.a.headers = space separated list of headers
-   * agent.channels.channel.listenerfactories.a.callon = put/take
-   * </pre><p>
-   * Example: <p>
-   * <pre>
-   * agent.channels.channel.listenerfactories = a b c
-   * agent.channels.channel.listenerfactories.a.type  = org.apache.channel.memory.DummyTransactionListener
-   * agent.channels.channel.listenerfactories.a.callon = put
-   * agent.channels.channel.listenerfactories.a.headers = test1 test5
-   * agent.channels.channel.listenerfactories.b.type  = org.apache.channel.memory.SmartTransactionListener
-   * agent.channels.channel.listenerfactories.b.callon = take
-   * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
-   *
-   * agent.channels.channel.listenerfactories.b.type  = org.apache.channel.memory.DummyTransactionListener
-   * agent.channels.channel.listenerfactories.b.callon = take
-   * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
-   * <pre> <p>
-   *
-   * <strong>Note: </strong> In the above description, calling a transaction
-   * listener means that its onPut/onTake methods are called on put/take and
-   * its onTransactionCommit/onTransactionRollback are called when the
-   * transaction is committed or rolled back </p>
-   * </p>
    */
   protected void initialize() {}
 
