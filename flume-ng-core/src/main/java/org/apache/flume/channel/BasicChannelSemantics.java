@@ -97,9 +97,9 @@ import com.google.common.base.Preconditions;
  * agent.channels.channel.listenerfactories.b.callon = take
  * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
  *
- * agent.channels.channel.listenerfactories.b.type  = org.apache.channel.memory.DummyTransactionListener
- * agent.channels.channel.listenerfactories.b.callon = take
- * agent.channels.channel.listenerfactories.b.headers = test3 test6 test21
+ * agent.channels.channel.listenerfactories.c.type  = org.apache.channel.memory.DummyTransactionListener
+ * agent.channels.channel.listenerfactories.c.callon = take
+ * agent.channels.channel.listenerfactories.c.headers = test3 test6 test21
  * <pre> <p>
  *
  * <strong>Note: </strong> In the above description, calling a transaction
