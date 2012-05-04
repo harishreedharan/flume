@@ -19,10 +19,20 @@
 
 package org.apache.flume.channel;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
+import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
+import org.apache.flume.TransactionListenerFactory;
+import org.apache.flume.conf.ConfigurationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 
@@ -38,7 +48,19 @@ public abstract class BasicChannelSemantics extends AbstractChannel {
   private ThreadLocal<BasicTransactionSemantics> currentTransaction
       = new ThreadLocal<BasicTransactionSemantics>();
 
+  private Map<String, Set<TransactionListenerFactory>> headerFactoryMap =
+      new HashMap<String, Set<TransactionListenerFactory>>();
+
+  private Set<TransactionListenerFactory> callOnPut =
+      new HashSet<TransactionListenerFactory>();
+  private Set<TransactionListenerFactory> callOnTake =
+      new HashSet<TransactionListenerFactory>();
+
+  private static Logger LOGGER = LoggerFactory.getLogger(
+      BasicChannelSemantics.class);
+
   private boolean initialized = false;
+
 
   /**
    * <p>
@@ -114,10 +136,97 @@ public abstract class BasicChannelSemantics extends AbstractChannel {
 
     BasicTransactionSemantics transaction = currentTransaction.get();
     if (transaction == null || transaction.getState().equals(
-            BasicTransactionSemantics.State.CLOSED)) {
+        BasicTransactionSemantics.State.CLOSED)) {
       transaction = createTransaction();
+      transaction.setFactoriesToCallOnPut(callOnPut);
+      transaction.setFactoriesToCallOnTake(callOnTake);
+      transaction.setHeaderFactoryMap(headerFactoryMap);
       currentTransaction.set(transaction);
     }
     return transaction;
+  }
+
+  /**
+   * Accepts basic configuration for the transaction listener and other
+   * channel specific properties. The transaction listener properties
+   * are specified with the <tt>txnlistener.</tt> and requires at least <tt>
+   * type</tt> parameter, and a <tt>listenerheaders</tt>.
+   * The <tt>listenerheaders</tt> parameter must have a space separated
+   * list of event headers for which the transaction listener will be called.
+   * Without these a transaction listener will not be created.
+   * This accepts configuration parameters in the following way:
+   *
+   * <pre>
+   * agent.channels.channel.txnlistener.type = fully.qualified.classname (or) alias from TransactionListenerType
+   * agent.channels.channel.listenerheaders = space separated list of headers
+   * agent.channels.channel.txnlistener.callat = put/take/both
+   * </pre><p>
+   * Example: <p>
+   * <pre>
+   * agent.channels.channel.txnlistener.type = org.apache.channel.memory.DummyTransactionListener
+   * agent.channels.channel.txnlistener.callon = both
+   * agent.channels.channel.listenerheaders = test1 test5
+   * <pre> <p>
+   *
+   * <bold> All subclasses must call <tt>super.configure()</tt> in their
+   * configure methods, for transaction listener support. If this method is not
+   * called transaction listeners will not be instantiated or configured.
+   */
+  @SuppressWarnings("unchecked")
+  @Override
+  public void configure(Context context) {
+    int i = 0;
+    String factoryNames = context.getString("listenerfactories");
+    if(factoryNames != null && !factoryNames.isEmpty()){
+      String[] factories = factoryNames.split("\\s+");
+      for(String currentFactory:factories){
+        Map<String, String> currentFactoryProps = context.getSubProperties(
+            "listenerfactories"+"."+currentFactory+".");
+        String factoryType = currentFactoryProps.get("type").trim();
+        Context currentFactoryContext = new Context();
+        currentFactoryContext.putAll(currentFactoryProps);
+        TransactionListenerFactory instance = null;
+        if(factoryType != null && !factoryType.isEmpty()){
+          try {
+            Class<? extends TransactionListenerFactory> factory =
+                (Class<? extends TransactionListenerFactory>)
+                Class.forName(factoryType);
+            instance = factory.newInstance();
+            instance.setName(currentFactory);
+            instance.initialize(currentFactoryContext);
+          } catch (Exception e) {
+            throw new ConfigurationException("Could not create Transaction" +
+                "Listener Factory. Exception follows.", e);
+          }
+          String currentHeaders = currentFactoryContext.getString("headers");
+          if(currentHeaders != null && !currentHeaders.isEmpty()){
+            String[] headers = currentHeaders.split("\\s+");
+            for(String header:headers){
+              Set<TransactionListenerFactory> factoriesToCall = null;
+              if(this.headerFactoryMap.containsKey(header)){
+                factoriesToCall = headerFactoryMap.get(header);
+                System.out.println(" Found in header factory map");
+              } else {
+                factoriesToCall = new HashSet<TransactionListenerFactory>();
+                headerFactoryMap.put(header, factoriesToCall);
+              }
+              factoriesToCall.add(instance);
+            }
+          }
+        }
+        String when = currentFactoryContext.getString("callon");
+        if(when != null && when.isEmpty()) {
+          if(when.equals("put")){
+            callOnPut.add(instance);
+          } else {
+            callOnTake.add(instance);
+          }
+        } else {
+          callOnTake.add(instance);
+        }
+      }
+    }
+    System.out.println("hdrfactory map: " + i++ +" " + headerFactoryMap);
+
   }
 }

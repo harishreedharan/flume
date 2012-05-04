@@ -148,6 +148,7 @@ public class MemoryChannel extends BasicChannelSemantics {
 
   @Override
   public void configure(Context context) {
+    super.configure(context);
     String strCapacity = context.getString("capacity");
     Integer capacity = null;
     if(strCapacity == null) {

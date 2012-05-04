@@ -87,6 +87,7 @@ public class RecoverableMemoryChannel extends BasicChannelSemantics {
 
   @Override
   public void configure(Context context) {
+    super.configure(context);
     memoryChannel.configure(context);
     int capacity = context.getInteger(CAPACITY, DEFAULT_CAPACITY);
     if(queueRemaining == null) {
