@@ -35,8 +35,14 @@ class EventQueueBackingStoreFactory {
       String name) throws Exception {
     return get(checkpointFile, capacity, name, true);
   }
+
   static EventQueueBackingStore get(File checkpointFile, int capacity,
       String name, boolean upgrade) throws Exception {
+    return get(checkpointFile, null, capacity, name, upgrade, false);
+  }
+  static EventQueueBackingStore get(File checkpointFile,
+      File backupCheckpointDir, int capacity,String name,
+      boolean upgrade, boolean shouldBackup) throws Exception {
     File metaDataFile = Serialization.getMetaDataFile(checkpointFile);
     RandomAccessFile checkpointFileHandle = null;
     try {
@@ -61,7 +67,8 @@ class EventQueueBackingStoreFactory {
         if(!checkpointFile.createNewFile()) {
           throw new IOException("Cannot create " + checkpointFile);
         }
-        return new EventQueueBackingStoreFileV3(checkpointFile, capacity, name);
+        return new EventQueueBackingStoreFileV3(checkpointFile,
+            capacity, name, backupCheckpointDir, shouldBackup);
       }
       // v3 due to meta file, version will be checked by backing store
       if(metaDataExists) {

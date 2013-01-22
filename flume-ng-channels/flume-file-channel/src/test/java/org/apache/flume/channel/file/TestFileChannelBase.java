@@ -37,12 +37,15 @@ public class TestFileChannelBase {
   protected File checkpointDir;
   protected File[] dataDirs;
   protected String dataDir;
+  protected File backupDir;
 
   @Before
   public void setup() throws Exception {
     baseDir = Files.createTempDir();
     checkpointDir = new File(baseDir, "chkpt");
+    backupDir = new File(baseDir, "backup");
     Assert.assertTrue(checkpointDir.mkdirs() || checkpointDir.isDirectory());
+    Assert.assertTrue(backupDir.mkdirs() || backupDir.isDirectory());
     dataDirs = new File[3];
     dataDir = "";
     for (int i = 0; i < dataDirs.length; i++) {

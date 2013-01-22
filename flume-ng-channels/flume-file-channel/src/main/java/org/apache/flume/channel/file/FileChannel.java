@@ -26,6 +26,7 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.flume.Channel;
 import org.apache.flume.ChannelException;
 import org.apache.flume.Context;
@@ -81,6 +82,7 @@ public class FileChannel extends BasicChannelSemantics {
   private long maxFileSize;
   private long minimumRequiredSpace;
   private File checkpointDir;
+  private File backupCheckpointDir = null;
   private File[] dataDirs;
   private Log log;
   private volatile boolean open;
@@ -97,6 +99,7 @@ public class FileChannel extends BasicChannelSemantics {
   private KeyProvider encryptionKeyProvider;
   private String encryptionActiveKey;
   private String encryptionCipherProvider;
+  private boolean useDualCheckpoints;
 
   @Override
   public synchronized void setName(String name) {
@@ -107,22 +110,39 @@ public class FileChannel extends BasicChannelSemantics {
   @Override
   public void configure(Context context) {
 
+    useDualCheckpoints = context.getBoolean(
+        FileChannelConfiguration.USE_DUAL_CHECKPOINTS,
+        FileChannelConfiguration.DEFAULT_USE_DUAL_CHECKPOINTS);
     String homePath = System.getProperty("user.home").replace('\\', '/');
 
-    String strCheckpointDir =
+    String[] strCheckpointDirs =
         context.getString(FileChannelConfiguration.CHECKPOINT_DIR,
-            homePath + "/.flume/file-channel/checkpoint");
+            homePath + "/.flume/file-channel/checkpoint").split(",");
+    if(strCheckpointDirs.length == 1) {
+      useDualCheckpoints = false;
+    }
 
     String[] strDataDirs = context.getString(FileChannelConfiguration.DATA_DIRS,
         homePath + "/.flume/file-channel/data").split(",");
 
     if(checkpointDir == null) {
-      checkpointDir = new File(strCheckpointDir);
+      checkpointDir = new File(strCheckpointDirs[0]);
     } else if(!checkpointDir.getAbsolutePath().
-        equals(new File(strCheckpointDir).getAbsolutePath())) {
+        equals(new File(strCheckpointDirs[0]).getAbsolutePath())) {
       LOG.warn("An attempt was made to change the checkpoint " +
           "directory after start, this is not supported.");
     }
+
+    if (useDualCheckpoints) {
+      if (backupCheckpointDir == null) {
+        backupCheckpointDir = new File(strCheckpointDirs[1]);
+      } else if (!backupCheckpointDir.getAbsolutePath()
+          .equals(new File(strCheckpointDirs[1]).getAbsolutePath())) {
+        LOG.warn("An attempt was made to change the checkpoint " +
+            "directory after start, this is not supported.");
+      }
+    }
+
     if(dataDirs == null) {
       dataDirs = new File[strDataDirs.length];
       for (int i = 0; i < strDataDirs.length; i++) {
@@ -179,8 +199,8 @@ public class FileChannel extends BasicChannelSemantics {
     }
 
     Preconditions.checkState(transactionCapacity <= capacity,
-        "File Channel transaction capacity cannot be greater than the " +
-            "capacity of the channel.");
+      "File Channel transaction capacity cannot be greater than the " +
+        "capacity of the channel.");
 
     checkpointInterval =
             context.getLong(FileChannelConfiguration.CHECKPOINT_INTERVAL,
@@ -301,6 +321,8 @@ public class FileChannel extends BasicChannelSemantics {
       builder.setEncryptionKeyProvider(encryptionKeyProvider);
       builder.setEncryptionKeyAlias(encryptionActiveKey);
       builder.setEncryptionCipherProvider(encryptionCipherProvider);
+      builder.setUseDualCheckpoints(useDualCheckpoints);
+      builder.setBackupCheckpointDir(backupCheckpointDir);
       log = builder.build();
       log.replay();
       open = true;
@@ -387,6 +409,23 @@ public class FileChannel extends BasicChannelSemantics {
 
   public boolean isOpen() {
     return open;
+  }
+
+  /**
+   * Did this channel recover a backup of the checkpoint to restart?
+   * @return true if the channel recovered using a backup.
+   */
+  @VisibleForTesting
+  boolean checkpointBackupRestored() {
+    if(log != null) {
+      return log.backupRestored();
+    }
+    return false;
+  }
+
+  @VisibleForTesting
+  Log getLog() {
+    return log;
   }
 
   /**

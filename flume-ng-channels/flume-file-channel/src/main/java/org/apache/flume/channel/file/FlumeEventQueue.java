@@ -30,9 +30,7 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.slf4j.Logger;
@@ -388,19 +386,6 @@ final class FlumeEventQueue {
      * asynchronously written to disk.
      */
     public void serializeAndWrite() throws Exception {
-      //Check if there is a current write happening, if there is abort it.
-      if (future != null) {
-        try {
-          future.cancel(true);
-        } catch (Exception e) {
-          LOG.warn("Interrupted a write to inflights "
-                  + "file: " + inflightEventsFile.getName()
-                  + " to start a new write.");
-        }
-        while (!future.isDone()) {
-          TimeUnit.MILLISECONDS.sleep(100);
-        }
-      }
       Collection<Long> values = inflightEvents.values();
       if(values.isEmpty()){
         file.setLength(0L);
@@ -440,21 +425,15 @@ final class FlumeEventQueue {
         }
         byte[] checksum = digest.digest(buffer.array());
         file.write(checksum);
-        future = Executors.newSingleThreadExecutor().submit(
-                new Runnable() {
-                  @Override
-                  public void run() {
-                    try {
-                      buffer.position(0);
-                      fileChannel.write(buffer);
-                      fileChannel.force(true);
-                    } catch (IOException ex) {
-                      LOG.error("Error while writing inflight events to "
-                              + "inflights file: "
-                              + inflightEventsFile.getName());
-                    }
-                  }
-                });
+        try {
+          buffer.position(0);
+          fileChannel.write(buffer);
+          fileChannel.force(true);
+        } catch (IOException ex) {
+          LOG.error("Error while writing inflight events to "
+              + "inflights file: "
+              + inflightEventsFile.getName());
+        }
         syncRequired = false;
       } catch (IOException ex) {
         LOG.error("Error while writing checkpoint to disk.", ex);

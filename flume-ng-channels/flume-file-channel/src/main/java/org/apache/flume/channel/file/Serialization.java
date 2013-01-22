@@ -66,14 +66,19 @@ class Serialization {
     if (!checkpointDir.isDirectory()) {
       return false;
     }
-    StringBuilder builder = new StringBuilder("Deleted the following files from"
-        + " the checkpoint directory: ");
+
     File[] files = checkpointDir.listFiles();
+    StringBuilder builder;
+    if (files.length != 0) {
+      builder = new StringBuilder("Deleted the following files: ");
+    } else {
+      return true;
+    }
     for (File file : files) {
       if (!FileUtils.deleteQuietly(file)) {
         LOG.info(builder.toString());
         LOG.error("Error while attempting to delete: " +
-            file.getName());
+            file.getAbsolutePath());
         return false;
       }
       builder.append(", ").append(file.getName());

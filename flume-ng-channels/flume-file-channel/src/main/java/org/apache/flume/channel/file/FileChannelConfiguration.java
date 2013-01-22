@@ -90,4 +90,8 @@ public class FileChannelConfiguration {
 
   public static final String USE_FAST_REPLAY = "use-fast-replay";
   public static final boolean DEFAULT_USE_FAST_REPLAY = false;
+
+  public static final String USE_DUAL_CHECKPOINTS = "use-dual-checkpoints";
+  public static final boolean DEFAULT_USE_DUAL_CHECKPOINTS = false;
+
 }

@@ -18,6 +18,7 @@
  */
 package org.apache.flume.channel.file;
 
+import java.io.File;
 import java.io.IOException;
 
 import com.google.common.collect.ImmutableSortedSet;
@@ -29,6 +30,7 @@ abstract class EventQueueBackingStore {
   private long logWriteOrderID;
   private final int capacity;
   private final String name;
+  public static final String BACKUP_COMPLETE_FILENAME = "backupComplete";
 
   protected EventQueueBackingStore(int capacity, String name) {
     this.capacity = capacity;
@@ -44,6 +46,9 @@ abstract class EventQueueBackingStore {
   abstract long get(int index);
   abstract void put(int index, long value);
   abstract boolean syncRequired();
+  public static boolean backupExists(File backupDir) {
+    return new File(backupDir, BACKUP_COMPLETE_FILENAME).exists();
+  }
   abstract void close() throws IOException;
 
   protected abstract int getVersion();

@@ -30,6 +30,7 @@ import java.util.Set;
 
 import javax.annotation.Nullable;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.collections.MultiMap;
 import org.apache.commons.collections.map.MultiValueMap;
 import org.apache.flume.channel.file.encryption.KeyProvider;
@@ -69,6 +70,33 @@ class ReplayHandler {
    * finding the put and commit in logdir2.
    */
   private final List<Long> pendingTakes;
+  int readCount = 0;
+  int putCount = 0;
+  int takeCount = 0;
+  int rollbackCount = 0;
+  int commitCount = 0;
+  int skipCount = 0;
+
+  @VisibleForTesting
+  public int getReadCount() {
+    return readCount;
+  }
+  @VisibleForTesting
+  public int getPutCount() {
+    return putCount;
+  }
+  @VisibleForTesting
+  public int getTakeCount() {
+    return takeCount;
+  }
+  @VisibleForTesting
+  public int getCommitCount() {
+    return commitCount;
+  }
+  @VisibleForTesting
+  public int getRollbackCount() {
+    return rollbackCount;
+  }
 
   ReplayHandler(FlumeEventQueue queue,
       @Nullable KeyProvider encryptionKeyProvider) {
@@ -110,12 +138,7 @@ class ReplayHandler {
         // for puts the fileId is the fileID of the file they exist in
         // for takes the fileId and offset are pointers to a put
         int fileId = reader.getLogFileID();
-        int readCount = 0;
-        int putCount = 0;
-        int takeCount = 0;
-        int rollbackCount = 0;
-        int commitCount = 0;
-        int skipCount = 0;
+
         while ((entry = reader.next()) != null) {
           int offset = entry.getOffset();
           TransactionEventRecord record = entry.getEvent();
@@ -160,7 +183,7 @@ class ReplayHandler {
               }
             } else {
               Preconditions.checkArgument(false, "Unknown record type: "
-                  + Integer.toHexString(type));
+                + Integer.toHexString(type));
             }
 
           } else {
@@ -255,12 +278,6 @@ class ReplayHandler {
       }
       LogRecord entry = null;
       FlumeEventPointer ptr = null;
-      int readCount = 0;
-      int putCount = 0;
-      int takeCount = 0;
-      int rollbackCount = 0;
-      int commitCount = 0;
-      int skipCount = 0;
       while ((entry = next()) != null) {
         // for puts the fileId is the fileID of the file they exist in
         // for takes the fileId and offset are pointers to a put

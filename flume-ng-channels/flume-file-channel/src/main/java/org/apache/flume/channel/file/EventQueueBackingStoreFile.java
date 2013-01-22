@@ -28,8 +28,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.io.Files;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +54,7 @@ abstract class EventQueueBackingStoreFile extends EventQueueBackingStore {
   protected static final int INDEX_CHECKPOINT_MARKER = 4;
   protected static final int CHECKPOINT_COMPLETE = 0;
   protected static final int CHECKPOINT_INCOMPLETE = 1;
+  public static final String BACKUP_COMPLETE_FILENAME = "backupComplete";
 
   protected LongBuffer elementsBuffer;
   protected final Map<Integer, Long> overwriteMap = new HashMap<Integer, Long>();
@@ -56,11 +62,25 @@ abstract class EventQueueBackingStoreFile extends EventQueueBackingStore {
   protected final MappedByteBuffer mappedBuffer;
   protected final RandomAccessFile checkpointFileHandle;
   protected final File checkpointFile;
+  private final Semaphore backupCompletedSema = new Semaphore(1);
+  protected final boolean shouldBackup;
+  private final File backupDir;
+  private final ExecutorService checkpointBackUpExecutor;
 
   protected EventQueueBackingStoreFile(int capacity, String name,
-      File checkpointFile) throws IOException, BadCheckpointException {
+      File checkpointFile) throws IOException,
+      BadCheckpointException {
+    this(capacity, name, checkpointFile, null, false);
+  }
+
+  protected EventQueueBackingStoreFile(int capacity, String name,
+      File checkpointFile, File checkpointBackupDir,
+      boolean backupCheckpoint) throws IOException,
+      BadCheckpointException {
     super(capacity, name);
     this.checkpointFile = checkpointFile;
+    this.shouldBackup = backupCheckpoint;
+    this.backupDir = checkpointBackupDir;
     checkpointFileHandle = new RandomAccessFile(checkpointFile, "rw");
     int totalBytes = (capacity + HEADER_SIZE) * Serialization.SIZE_OF_LONG;
     if(checkpointFileHandle.length() == 0) {
@@ -95,6 +115,13 @@ abstract class EventQueueBackingStoreFile extends EventQueueBackingStore {
               + " probably because the agent stopped while the channel was"
               + " checkpointing.");
     }
+    if(shouldBackup) {
+      checkpointBackUpExecutor = Executors.newSingleThreadExecutor(new
+          ThreadFactoryBuilder().setNameFormat("CheckpointBackUpThread")
+          .build());
+    } else {
+      checkpointBackUpExecutor = null;
+    }
   }
 
   protected long getCheckpointLogWriteOrderID() {
@@ -103,11 +130,60 @@ abstract class EventQueueBackingStoreFile extends EventQueueBackingStore {
 
   protected abstract void writeCheckpointMetaData() throws IOException;
 
+  /**
+   * This method backs up the checkpoint and its metadata files. This method
+   * is called once the checkpoint is completely written and is called
+   * from a separate thread which runs in the background while the file channel
+   * continues operation.
+   *
+   * @param backupDirectory - the directory to which the backup files should be
+   *                        copied.
+   * @throws IOException - if the copy failed, or if there is not enough disk
+   * space to copy the checkpoint files over.
+   */
+  protected void backupCheckpoint(File backupDirectory) throws IOException {
+    Serialization.deleteAllFiles(backupDirectory);
+    File checkpointDir = checkpointFile.getParentFile();
+    for(File origFile : checkpointDir.listFiles()) {
+      Files.copy(origFile, new File(backupDirectory, origFile.getName()));
+    }
+    new File(backupDirectory, BACKUP_COMPLETE_FILENAME).createNewFile();
+  }
+
+  /**
+   * Restore the checkpoint, if it is found to be bad.
+   * @return true - if the previous backup was successfully completed and
+   * restore was successfully completed.
+   * @throws IOException - If restore failed due to IOException
+   *
+   */
+  public static boolean restoreBackUp(File checkpointDir, File backupDir)
+      throws IOException {
+    if (!(new File(backupDir, BACKUP_COMPLETE_FILENAME).exists())) {
+      return false;
+    }
+    for (File backUpFile : backupDir.listFiles()) {
+      String fileName = backUpFile.getName();
+      if (!fileName.equals(BACKUP_COMPLETE_FILENAME)) {
+        Files.copy(backUpFile, new File(checkpointDir, fileName));
+      }
+    }
+    return true;
+  }
+
   @Override
   void beginCheckpoint() throws IOException {
     LOG.info("Start checkpoint for " + checkpointFile +
         ", elements to sync = " + overwriteMap.size());
 
+    if (shouldBackup) {
+      if(!backupCompletedSema.tryAcquire()) {
+        LOG.warn("Backup of checkpoint files failed. Will attempt to " +
+            "checkpoint only at the end of the next checkpoint interval. Try " +
+            "increasing the checkpoint interval if this error happens often.");
+        return;
+      }
+    }
     // Start checkpoint
     elementsBuffer.put(INDEX_CHECKPOINT_MARKER, CHECKPOINT_INCOMPLETE);
     mappedBuffer.force();
@@ -141,8 +217,44 @@ abstract class EventQueueBackingStoreFile extends EventQueueBackingStore {
     // Finish checkpoint
     elementsBuffer.put(INDEX_CHECKPOINT_MARKER, CHECKPOINT_COMPLETE);
     mappedBuffer.force();
+    /*
+     * Make sure old backup is no longer considered valid before releasing the
+     * lock, else we could delete data files before the backup is marked
+     * invalid.
+     */
+    if (shouldBackup) {
+      File backupFile = new File(backupDir, BACKUP_COMPLETE_FILENAME);
+      if (backupExists(backupDir)) {
+        backupFile.delete();
+      }
+      startBackupThread();
+    }
   }
 
+  /**
+   * This method starts backing up the checkpoint in the background.
+   */
+  private void startBackupThread() {
+    LOG.info("Attempting to back up checkpoint.");
+    checkpointBackUpExecutor.submit(new Runnable() {
+
+      @Override
+      public void run() {
+        boolean error = false;
+        try {
+          backupCheckpoint(backupDir);
+        } catch (IOException ex) {
+          error = true;
+          LOG.error("Backing up of checkpoint directory failed.");
+        } finally {
+          backupCompletedSema.release();
+        }
+        if (!error) {
+          LOG.info("Checkpoint backup completed.");
+        }
+      }
+    });
+  }
 
   @Override
   void close() {

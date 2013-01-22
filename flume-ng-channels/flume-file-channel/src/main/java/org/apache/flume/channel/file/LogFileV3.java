@@ -81,6 +81,14 @@ class LogFileV3 extends LogFile {
           ProtosFactory.LogFileMetaData.newBuilder(logFileMetaData);
       metaDataBuilder.setCheckpointPosition(currentPosition);
       metaDataBuilder.setCheckpointWriteOrderID(logWriteOrderID);
+      /*
+       * Set the previous checkpoint position and write order id so that it
+       * would be possible to recover from a backup.
+       */
+      metaDataBuilder.setBackupCheckpointPosition(logFileMetaData
+        .getCheckpointPosition());
+      metaDataBuilder.setBackupCheckpointWriteOrderID(logFileMetaData
+        .getCheckpointWriteOrderID());
       logFileMetaData = metaDataBuilder.build();
       LOGGER.info("Updating " + metaDataFile.getName()  + " currentPosition = "
           + currentPosition + ", logWriteOrderID = " + logWriteOrderID);
@@ -101,7 +109,7 @@ class LogFileV3 extends LogFile {
       FileInputStream inputStream = new FileInputStream(metaDataFile);
       try {
         ProtosFactory.LogFileMetaData metaData = Preconditions.checkNotNull(
-            ProtosFactory.LogFileMetaData.
+          ProtosFactory.LogFileMetaData.
             parseDelimitedFrom(inputStream), "Metadata cannot be null");
         if (metaData.getLogFileID() != logFileID) {
           throw new IOException("The file id of log file: "
