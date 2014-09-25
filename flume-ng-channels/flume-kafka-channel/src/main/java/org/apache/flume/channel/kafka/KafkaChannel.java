@@ -64,6 +64,9 @@ public class KafkaChannel extends BasicChannelSemantics {
       }
     };
 
+  // Kafka needs one consumer per thread, though Kafka somehow manages this
+  // internally. But it is painful to handle the instances correctly,
+  // so lets keep track of it ourselves - this is more explicit and cleaner.
   private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
     ThreadLocal
       <ConsumerAndIterator>() {
