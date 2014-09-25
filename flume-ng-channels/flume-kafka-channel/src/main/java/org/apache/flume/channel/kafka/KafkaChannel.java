@@ -18,46 +18,261 @@
  */
 package org.apache.flume.channel.kafka;
 
-import org.apache.flume.Context;
-import org.apache.flume.Event;
+import com.google.common.base.Optional;
+import com.google.common.collect.Lists;
+import kafka.consumer.*;
+import kafka.javaapi.consumer.ConsumerConnector;
+import kafka.javaapi.producer.Producer;
+import kafka.producer.KeyedMessage;
+import kafka.producer.ProducerConfig;
+import org.apache.flume.*;
 import org.apache.flume.channel.BasicChannelSemantics;
 import org.apache.flume.channel.BasicTransactionSemantics;
+import org.apache.flume.conf.ConfigurationException;
 
-import java.util.Queue;
+import static org.apache.flume.channel.kafka.KafkaChannelConfiguration.*;
+
+import org.apache.flume.event.EventBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class KafkaChannel extends BasicChannelSemantics {
 
-  private final ThreadLocal<Queue> failedEvents = new ThreadLocal<Queue>();
+  private final static Logger LOGGER =
+    LoggerFactory.getLogger(KafkaChannel.class);
+
+
+  private final Properties kafkaConf = new Properties();
+  private Producer<String, byte[]> producer;
+
+  private AtomicReference<String> topic = new AtomicReference<String>();
+  Map<String, Integer> topicCountMap = new HashMap<String, Integer>();
+
+  // Track all consumers to close them eventually.
+  private final List<ConsumerAndIterator> consumers =
+    Collections.synchronizedList(new LinkedList<ConsumerAndIterator>());
+
+  private final ThreadLocal<List<Event>> failedEvents = new
+    ThreadLocal<List<Event>>() {
+      @Override
+      public List<Event> initialValue() {
+        return new LinkedList<Event>();
+      }
+    };
+
+  private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
+    ThreadLocal
+      <ConsumerAndIterator>() {
+      public ConsumerAndIterator initialValue() {
+        try {
+          ConsumerAndIterator ret = new ConsumerAndIterator();
+          ConsumerConfig consumerConfig =
+            new ConsumerConfig(kafkaConf);
+          ret.consumer = Consumer.createJavaConsumerConnector(consumerConfig);
+          Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
+            ret.consumer.createMessageStreams(topicCountMap);
+          List<KafkaStream<byte[], byte[]>> topicList = consumerMap.get(topic);
+          KafkaStream<byte[], byte[]> stream = topicList.get(0);
+          ret.iterator = stream.iterator();
+          consumers.add(ret);
+          LOGGER.info("Created new consumer to connect to Kafka");
+          return ret;
+        } catch (Exception e) {
+          throw new FlumeException("Unable to connect to Kafka", e);
+        }
+      }
+    };
+
+  @Override
+  public void start() {
+    try {
+      LOGGER.info("Starting Kafka Channel: " + getName());
+      producer = new Producer<String, byte[]>(new ProducerConfig(kafkaConf));
+      // We always have just one topic being read by one thread
+      topicCountMap.put(topic.get(), 1);
+      super.start();
+    } catch (Exception e) {
+      throw new FlumeException("Unable to create Kafka Connections. " +
+        "Check whether the ZooKeeper server is up and that the " +
+        "Flume agent can connect to it.", e);
+    }
+  }
+
+  @Override
+  public void stop() {
+    for (ConsumerAndIterator c : consumers) {
+      try {
+        c.consumer.shutdown();
+      } catch (Exception ex) {
+        LOGGER.warn("Error while shutting down consumer.", ex);
+      }
+    }
+    super.stop();
+  }
 
   @Override
   protected BasicTransactionSemantics createTransaction() {
-    return null;
+    return new KafkaTransaction();
   }
 
+  @Override
   public void configure(Context ctx) {
+    String topicStr = ctx.getString(TOPIC);
+    if (topicStr == null || topicStr.isEmpty()) {
+      topicStr = DEFAULT_TOPIC;
+      LOGGER
+        .debug("Topic was not specified. Using " + topicStr + " as the topic.");
+    }
+    topic.set(topicStr);
+    String groupId = ctx.getString(GROUP_ID_FLUME);
+    if (groupId == null || groupId.isEmpty()) {
+      groupId = DEFAULT_GROUP_ID;
+      LOGGER.debug(
+        "Group ID was not specified. Using " + groupId + " as the group id.");
+    }
+    String brokerList = ctx.getString(BROKER_LIST_FLUME_KEY);
+    if (brokerList == null || brokerList.isEmpty()) {
+      throw new ConfigurationException("Broker List must be specified");
+    }
+    String zkConnect = ctx.getString(ZOOKEEPER_CONNECT_FLUME);
+    if (zkConnect == null || zkConnect.isEmpty()) {
+      throw new ConfigurationException(
+        "Zookeeper Connection must be specified");
+    }
+    Long timeout = ctx.getLong(TIMEOUT, Long.valueOf(DEFAULT_TIMEOUT));
+    kafkaConf.putAll(ctx.getSubProperties(KAFKA_PREFIX));
+    kafkaConf.setProperty(TOPIC, topic.get());
+    kafkaConf.setProperty(GROUP_ID, groupId);
+    kafkaConf.setProperty(BROKER_LIST_KEY, brokerList);
+    kafkaConf.setProperty(ZOOKEEPER_CONNECT, zkConnect);
+    kafkaConf.setProperty(AUTO_COMMIT_ENABLED, String.valueOf(false));
+    kafkaConf.setProperty(CONSUMER_TIMEOUT, String.valueOf(timeout));
+    kafkaConf.setProperty(REQUIRED_ACKS_KEY, "-1");
+    kafkaConf.setProperty(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
+    kafkaConf.setProperty(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
+  }
 
+  private enum TransactionType {
+    PUT,
+    TAKE
   }
 
   private class KafkaTransaction extends BasicTransactionSemantics {
 
+    private TransactionType type;
+    // For Puts
+    private Optional<ByteArrayOutputStream> tempOutStream = Optional
+      .absent();
+    private Optional<ObjectOutputStream> tempDataOut = Optional.absent();
+
+    // For put transactions, serialize the events and batch them and send it.
+    private List<byte[]> serializedEvents = null;
+    // For take transactions, deserialize and hold them till commit goes through
+    private List<Event> events = null;
+
     @Override
     protected void doPut(Event event) throws InterruptedException {
-
+      type = TransactionType.PUT;
+      events = Lists.newLinkedList();
+      try {
+        if (!tempDataOut.isPresent()) {
+          tempOutStream = Optional.of(new ByteArrayOutputStream());
+          tempDataOut =
+            Optional.of(new ObjectOutputStream(tempOutStream.get()));
+        }
+        tempOutStream.get().reset();
+        KafkaChannelEvent kEvent = new KafkaChannelEvent(event.getHeaders(),
+          event.getBody());
+        tempDataOut.get().writeObject(kEvent);
+        tempDataOut.get().flush();
+        // Not really possible to avoid this copy :(
+        serializedEvents.add(tempOutStream.get().toByteArray());
+      } catch (IOException e) {
+        throw new ChannelException("Error while serializing event", e);
+      }
     }
 
     @Override
     protected Event doTake() throws InterruptedException {
-      return null;
+      type = TransactionType.TAKE;
+      Event e;
+      if(!failedEvents.get().isEmpty()) {
+        e = failedEvents.get().remove(0);
+      } else {
+        try {
+          ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
+          it.hasNext();
+          ObjectInputStream stream = new ObjectInputStream(new
+            ByteArrayInputStream(it.next().message()));
+          KafkaChannelEvent kEvent = (KafkaChannelEvent) stream.readObject();
+          e = EventBuilder.withBody(kEvent.body, kEvent.headers);
+        } catch (ConsumerTimeoutException ex) {
+          return null;
+        } catch (Exception ex) {
+          throw new ChannelException("Error while getting events from Kafka",
+            ex);
+        }
+      }
+      events.add(e);
+      return e;
     }
 
     @Override
     protected void doCommit() throws InterruptedException {
-
+      if (type.equals(TransactionType.PUT)) {
+        try {
+          List<KeyedMessage<String, byte[]>> messages = new
+            ArrayList<KeyedMessage<String, byte[]>>(events.size());
+          for (byte[] event : serializedEvents) {
+            messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
+          }
+          producer.send(messages);
+        } catch (Exception ex) {
+          LOGGER.warn("Sending events to Kafka failed", ex);
+          throw new ChannelException("Commit failed as send to Kafka failed",
+            ex);
+        }
+      } else {
+        if(failedEvents.get().isEmpty()) {
+          consumerAndIter.get().consumer.commitOffsets();
+        }
+        events.clear();
+        events = null; // help gc
+      }
     }
 
     @Override
     protected void doRollback() throws InterruptedException {
-
+      if (type.equals(TransactionType.PUT)) {
+        serializedEvents.clear();
+        serializedEvents = null;
+      } else {
+        failedEvents.get().addAll(events);
+        events.clear();
+        events = null;
+      }
     }
+  }
+
+  class KafkaChannelEvent implements Serializable {
+
+    private static final long serialVersionUID = 8702461677509231736L;
+
+    private final Map<String, String> headers;
+    private final byte[] body;
+
+    KafkaChannelEvent(Map<String, String> headers, byte[] body) {
+      this.headers = headers;
+      this.body = body;
+    }
+  }
+
+  private class ConsumerAndIterator {
+    ConsumerConnector consumer;
+    ConsumerIterator<byte[], byte[]> iterator;
   }
 }
