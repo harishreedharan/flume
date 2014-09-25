@@ -50,7 +50,8 @@ public class KafkaChannel extends BasicChannelSemantics {
   private Producer<String, byte[]> producer;
 
   private AtomicReference<String> topic = new AtomicReference<String>();
-  Map<String, Integer> topicCountMap = new HashMap<String, Integer>();
+  private final Map<String, Integer> topicCountMap =
+    new HashMap<String, Integer>();
 
   // Track all consumers to close them eventually.
   private final List<ConsumerAndIterator> consumers =
@@ -63,7 +64,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       public List<Event> initialValue() {
         return new LinkedList<Event>();
       }
-      
+
     };
 
   // Kafka needs one consumer per thread, though Kafka somehow manages this
@@ -81,7 +82,8 @@ public class KafkaChannel extends BasicChannelSemantics {
           ret.consumer = Consumer.createJavaConsumerConnector(consumerConfig);
           Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
             ret.consumer.createMessageStreams(topicCountMap);
-          List<KafkaStream<byte[], byte[]>> topicList = consumerMap.get(topic);
+          List<KafkaStream<byte[], byte[]>> topicList =
+            consumerMap.get(topic.get());
           KafkaStream<byte[], byte[]> stream = topicList.get(0);
           ret.iterator = stream.iterator();
           consumers.add(ret);
@@ -207,7 +209,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     protected Event doTake() throws InterruptedException {
       type = TransactionType.TAKE;
       Event e;
-      if(!failedEvents.get().isEmpty()) {
+      if (!failedEvents.get().isEmpty()) {
         e = failedEvents.get().remove(0);
       } else {
         try {
@@ -244,7 +246,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if(failedEvents.get().isEmpty()) {
+        if (failedEvents.get().isEmpty()) {
           consumerAndIter.get().consumer.commitOffsets();
         }
         events.clear();
@@ -265,7 +267,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     }
   }
 
-  class KafkaChannelEvent implements Serializable {
+  private class KafkaChannelEvent implements Serializable {
 
     private static final long serialVersionUID = 8702461677509231736L;
 
