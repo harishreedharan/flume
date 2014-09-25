@@ -58,18 +58,21 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private final ThreadLocal<List<Event>> failedEvents = new
     ThreadLocal<List<Event>>() {
+
       @Override
       public List<Event> initialValue() {
         return new LinkedList<Event>();
       }
+      
     };
 
   // Kafka needs one consumer per thread, though Kafka somehow manages this
   // internally. But it is painful to handle the instances correctly,
   // so lets keep track of it ourselves - this is more explicit and cleaner.
   private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
-    ThreadLocal
-      <ConsumerAndIterator>() {
+    ThreadLocal<ConsumerAndIterator>() {
+
+      @Override
       public ConsumerAndIterator initialValue() {
         try {
           ConsumerAndIterator ret = new ConsumerAndIterator();
@@ -88,6 +91,7 @@ public class KafkaChannel extends BasicChannelSemantics {
           throw new FlumeException("Unable to connect to Kafka", e);
         }
       }
+
     };
 
   @Override
