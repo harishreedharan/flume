@@ -19,4 +19,26 @@
 package org.apache.flume.channel.kafka;
 
 public class KafkaChannelConfiguration {
+
+  public static final String KAFKA_PREFIX = "kafka.";
+  public static final String BROKER_LIST_KEY = "metadata.broker.list";
+  public static final String REQUIRED_ACKS_KEY = "request.required.acks";
+  public static final String BROKER_LIST_FLUME_KEY = "brokerList";
+  public static final String TOPIC = "topic";
+  public static final String GROUP_ID = "group.id";
+  public static final String GROUP_ID_FLUME = "groupId";
+  public static final String AUTO_COMMIT_ENABLED = "auto.commit.enabled";
+  public static final String ZOOKEEPER_CONNECT = "zookeeper.connect";
+  public static final String ZOOKEEPER_CONNECT_FLUME = "zookeeperConnect";
+  public static final String DEFAULT_GROUP_ID = "flume";
+  public static final String DEFAULT_TOPIC = "flume-channel";
+  public static final String TIMEOUT = "timeout";
+  public static final String DEFAULT_TIMEOUT = "10";
+  public static final String CONSUMER_TIMEOUT = "consumer.timeout.ms";
+  public static final String MESSAGE_SERIALIZER =
+    "kafka.serializer.DefaultEncoder";
+  public static final String KEY_SERIALIZER =
+    "kafka.serializer.StringEncoder";
+  public static final String MESSAGE_SERIALIZER_KEY = "serializer.class";
+  public static final String KEY_SERIALIZER_KEY = "key.serializer.class";
 }
