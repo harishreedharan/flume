@@ -18,6 +18,9 @@
  */
 package org.apache.flume.channel.kafka;
 
+import kafka.admin.AdminUtils;
+import kafka.utils.ZKStringSerializer$;
+import org.I0Itec.zkclient.ZkClient;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
@@ -40,6 +43,7 @@ public class TestKafkaChannel {
   @BeforeClass
   public static void setup() {
     testUtil.prepare();
+    createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
   }
 
   @AfterClass
@@ -129,5 +133,20 @@ public class TestKafkaChannel {
     context.put(KafkaChannelConfiguration.ZOOKEEPER_CONNECT_FLUME_KEY,
       testUtil.getZkUrl());
     return context;
+  }
+
+  public static void createTopic(String topicName) {
+    // Create a ZooKeeper client
+    int sessionTimeoutMs = 10000;
+    int connectionTimeoutMs = 10000;
+    ZkClient zkClient = new ZkClient(testUtil.getZkUrl(),
+      sessionTimeoutMs, connectionTimeoutMs,
+      ZKStringSerializer$.MODULE$);
+
+    int numPartitions = 1;
+    int replicationFactor = 1;
+    Properties topicConfig = new Properties();
+    AdminUtils.createTopic(zkClient, topicName, numPartitions,
+      replicationFactor, topicConfig);
   }
 }
