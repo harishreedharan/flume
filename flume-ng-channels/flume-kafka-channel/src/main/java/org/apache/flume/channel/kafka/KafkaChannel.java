@@ -194,7 +194,9 @@ public class KafkaChannel extends BasicChannelSemantics {
     @Override
     protected void doPut(Event event) throws InterruptedException {
       type = TransactionType.PUT;
-      serializedEvents = Lists.newLinkedList();
+      if (serializedEvents == null) {
+        serializedEvents = Lists.newLinkedList();
+      }
       try {
         if (!tempDataOut.isPresent()) {
           tempOutStream = Optional.of(new ByteArrayOutputStream());
@@ -217,7 +219,9 @@ public class KafkaChannel extends BasicChannelSemantics {
     @Override
     protected Event doTake() throws InterruptedException {
       type = TransactionType.TAKE;
-      events = Lists.newLinkedList();
+      if (events == null) {
+        events = Lists.newLinkedList();
+      }
       Event e;
       if (!failedEvents.get().isEmpty()) {
         e = failedEvents.get().remove(0);
