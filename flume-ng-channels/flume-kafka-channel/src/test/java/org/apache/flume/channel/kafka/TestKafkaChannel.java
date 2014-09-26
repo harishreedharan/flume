@@ -41,9 +41,13 @@ public class TestKafkaChannel {
   private static TestUtil testUtil = TestUtil.getInstance();
 
   @BeforeClass
-  public static void setup() {
+  public static void setup() throws Exception{
     testUtil.prepare();
-    createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
+    Thread.sleep(5000);
+    try {
+      createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
+    } catch (Exception e) {
+    }
   }
 
   @AfterClass
@@ -69,38 +73,50 @@ public class TestKafkaChannel {
           hdrs));
       }
     }
-    ExecutorCompletionService<Void> submitterSvc = new ExecutorCompletionService<Void>(Executors
-      .newFixedThreadPool(10));
+    ExecutorCompletionService<Void> submitterSvc =
+      new ExecutorCompletionService<Void>(Executors
+        .newCachedThreadPool());
     final int totalEvents = 50;
     for (int i = 0; i < 5; i++) {
       final int index = i;
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
+          System.out.println("Txn: " + index);
           Transaction tx = channel.getTransaction();
           tx.begin();
           List<Event> eventsToPut = events.get(index);
           for (int j = 0; j < 10; j++) {
             channel.put(eventsToPut.get(j));
           }
-          tx.commit();
-          tx.close();
+          try {
+            tx.commit();
+          } finally {
+            tx.close();
+          }
+
+
           return null;
         }
       });
-      final List<Event> eventsPulled = Collections.synchronizedList(new
-        ArrayList<Event>(50));
-      final AtomicInteger counter = new AtomicInteger(0);
-      for (int k = 0; k < 5; k++) {
-        submitterSvc.submit(new Callable<Void>() {
-          @Override
-          public Void call() {
-            Transaction tx = null;
-            while (counter.get() < 50) {
-              if (tx == null) {
-                tx = channel.getTransaction();
-                tx.begin();
-              }
+    }
+    System.out.println("Submitted");
+    final List<Event> eventsPulled = Collections.synchronizedList(new
+      ArrayList<Event>(50));
+    final AtomicInteger counter = new AtomicInteger(0);
+    for (int k = 0; k < 5; k++) {
+      final int t = k;
+      submitterSvc.submit(new Callable<Void>() {
+        @Override
+        public Void call() {
+          Transaction tx = null;
+          while (counter.get() < 50) {
+            if (tx == null) {
+              tx = channel.getTransaction();
+              tx.begin();
+            }
+            System.out.println("Taking: " + t);
+            try {
               Event e = channel.take();
               if (e != null) {
                 eventsPulled.add(e);
@@ -110,19 +126,21 @@ public class TestKafkaChannel {
                 tx.close();
                 tx = null;
               }
+            } catch (Exception ex) {
+              ex.printStackTrace();
             }
-            return null;
           }
-        });
-      }
-//      int completed = 0;
+          return null;
+        }
+      });
+    }
+    int completed = 0;
 //      while (completed < 10) {
 //        submitterSvc.take();
 //        completed++;
 //      }
-      Thread.sleep(10000);
-      Assert.assertFalse(eventsPulled.isEmpty());
-    }
+    Thread.sleep(40000);
+    Assert.assertFalse(eventsPulled.isEmpty());
   }
 
   private Context prepareDefaultContext() {
