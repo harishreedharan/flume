@@ -19,10 +19,17 @@
 package org.apache.flume.channel.kafka;
 
 import org.apache.flume.Context;
+import org.apache.flume.Event;
+import org.apache.flume.event.EventBuilder;
 import org.apache.flume.sink.kafka.util.TestUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class TestKafkaChannel {
 
@@ -41,6 +48,19 @@ public class TestKafkaChannel {
   @Test
   public void testKafkaChannel() {
     Context context = prepareDefaultContext();
+    KafkaChannel channel = new KafkaChannel();
+    List<List<Event>> events = new ArrayList<List<Event>>();
+    for (int i = 0; i < 5; i++) {
+      List<Event> eventList = new ArrayList<Event>(10);
+      for (int j = 0; j < 10; j++) {
+        Map<String, String> hdrs = new HashMap<String, String>();
+        hdrs.put("header", String.valueOf(j));
+        eventList.add(EventBuilder.withBody(String.valueOf(j).getBytes(),
+          hdrs));
+      }
+    }
+
+
   }
 
   private Context prepareDefaultContext() {
