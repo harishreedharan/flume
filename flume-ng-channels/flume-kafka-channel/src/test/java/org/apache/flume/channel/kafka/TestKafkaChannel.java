@@ -18,5 +18,38 @@
  */
 package org.apache.flume.channel.kafka;
 
+import org.apache.flume.Context;
+import org.apache.flume.sink.kafka.util.TestUtil;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
 public class TestKafkaChannel {
+
+  private static TestUtil testUtil = TestUtil.getInstance();
+
+  @BeforeClass
+  public static void setup() {
+    testUtil.prepare();
+  }
+
+  @AfterClass
+  public static void tearDown() {
+    testUtil.tearDown();
+  }
+
+  @Test
+  public void testKafkaChannel() {
+    Context context = prepareDefaultContext();
+  }
+
+  private Context prepareDefaultContext() {
+    // Prepares a default context with Kafka Server Properties
+    Context context = new Context();
+    context.put(KafkaChannelConfiguration.BROKER_LIST_KEY,
+      testUtil.getKafkaServerUrl());
+    context.put(KafkaChannelConfiguration.ZOOKEEPER_CONNECT_FLUME_KEY,
+      testUtil.getZkUrl());
+    return context;
+  }
 }
