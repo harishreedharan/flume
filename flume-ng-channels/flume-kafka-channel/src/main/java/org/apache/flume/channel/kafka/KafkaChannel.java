@@ -147,7 +147,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     if (brokerList == null || brokerList.isEmpty()) {
       throw new ConfigurationException("Broker List must be specified");
     }
-    String zkConnect = ctx.getString(ZOOKEEPER_CONNECT_FLUME);
+    String zkConnect = ctx.getString(ZOOKEEPER_CONNECT_FLUME_KEY);
     if (zkConnect == null || zkConnect.isEmpty()) {
       throw new ConfigurationException(
         "Zookeeper Connection must be specified");
@@ -163,6 +163,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     kafkaConf.setProperty(REQUIRED_ACKS_KEY, "-1");
     kafkaConf.setProperty(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
     kafkaConf.setProperty(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
+    kafkaConf.setProperty("kafka.producer.type", "sync");
   }
 
   private enum TransactionType {
