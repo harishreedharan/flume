@@ -38,6 +38,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class KafkaChannel extends BasicChannelSemantics {
@@ -56,47 +59,14 @@ public class KafkaChannel extends BasicChannelSemantics {
   // Track all consumers to close them eventually.
   private final List<ConsumerAndIterator> consumers =
     Collections.synchronizedList(new LinkedList<ConsumerAndIterator>());
-
-  private final ThreadLocal<List<Event>> failedEvents = new
-    ThreadLocal<List<Event>>() {
-
-      @Override
-      public List<Event> initialValue() {
-        return new LinkedList<Event>();
-      }
-
-    };
+  private final BlockingQueue<Event> failedEvents = new
+    LinkedBlockingQueue<Event>();
 
   // Kafka needs one consumer per thread, though Kafka somehow manages this
   // internally. But it is painful to handle the instances correctly,
   // so lets keep track of it ourselves - this is more explicit and cleaner.
-  private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
-    ThreadLocal<ConsumerAndIterator>() {
-
-      @Override
-      public ConsumerAndIterator initialValue() {
-        try {
-          ConsumerAndIterator ret = new ConsumerAndIterator();
-          synchronized (kafkaConf) {
-            ConsumerConfig consumerConfig =
-              new ConsumerConfig(kafkaConf);
-            ret.consumer = Consumer.createJavaConsumerConnector(consumerConfig);
-            Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
-              ret.consumer.createMessageStreams(topicCountMap);
-            List<KafkaStream<byte[], byte[]>> topicList =
-              consumerMap.get(topic.get());
-            KafkaStream<byte[], byte[]> stream = topicList.get(0);
-            ret.iterator = stream.iterator();
-            consumers.add(ret);
-            LOGGER.info("Created new consumer to connect to Kafka");
-          }
-          return ret;
-        } catch (Exception e) {
-          throw new FlumeException("Unable to connect to Kafka", e);
-        }
-      }
-
-    };
+  private ThreadLocal<ConsumerAndIterator> consumerAndIter;
+  private kafka.javaapi.consumer.ConsumerConnector consumer;
 
   @Override
   public void start() {
@@ -106,7 +76,38 @@ public class KafkaChannel extends BasicChannelSemantics {
         producer = new Producer<String, byte[]>(new ProducerConfig(kafkaConf));
       }
       // We always have just one topic being read by one thread
-      topicCountMap.put(topic.get(), 1);
+      LOGGER.info("Topic = " + topic.get());
+      topicCountMap.put(topic.get(), 10);
+      ConsumerConfig consumerConfig =
+        new ConsumerConfig(kafkaConf);
+      consumer =
+        Consumer.createJavaConsumerConnector(consumerConfig);
+      Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
+        consumer.createMessageStreams(topicCountMap);
+      final Queue<KafkaStream<byte[], byte[]>> streamList =
+        new LinkedBlockingDeque<KafkaStream<byte[], byte[]>>(consumerMap.get
+          (topic.get()));
+
+      consumerAndIter = new
+        ThreadLocal<ConsumerAndIterator>() {
+
+          @Override
+          public ConsumerAndIterator initialValue() {
+            try {
+              ConsumerAndIterator ret = new ConsumerAndIterator();
+              synchronized (kafkaConf) {
+                KafkaStream<byte[], byte[]> stream = streamList.poll();
+                ret.iterator = stream.iterator();
+                consumers.add(ret);
+                LOGGER.info("Created new consumer to connect to Kafka");
+              }
+              return ret;
+            } catch (Exception e) {
+              throw new FlumeException("Unable to connect to Kafka", e);
+            }
+          }
+
+        };
       super.start();
     } catch (Exception e) {
       LOGGER.error("Could not start producer");
@@ -120,7 +121,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   public void stop() {
     for (ConsumerAndIterator c : consumers) {
       try {
-        c.consumer.shutdown();
+        consumer.shutdown();
       } catch (Exception ex) {
         LOGGER.warn("Error while shutting down consumer.", ex);
       }
@@ -164,11 +165,11 @@ public class KafkaChannel extends BasicChannelSemantics {
       kafkaConf.put(BROKER_LIST_KEY, brokerList);
       kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
       kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout*1000));
+      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
       kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
 //    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
 //    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
-      kafkaConf.put("kafka.producer.type", "sync");
+      kafkaConf.put("producer.type", "sync");
       LOGGER.info(kafkaConf.toString());
     }
   }
@@ -223,8 +224,8 @@ public class KafkaChannel extends BasicChannelSemantics {
         events = Lists.newLinkedList();
       }
       Event e;
-      if (!failedEvents.get().isEmpty()) {
-        e = failedEvents.get().remove(0);
+      if (!failedEvents.isEmpty()) {
+        e = failedEvents.poll();
       } else {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
@@ -234,6 +235,7 @@ public class KafkaChannel extends BasicChannelSemantics {
           KafkaChannelEvent kEvent = (KafkaChannelEvent) stream.readObject();
           e = EventBuilder.withBody(kEvent.body, kEvent.headers);
         } catch (ConsumerTimeoutException ex) {
+          LOGGER.warn("Error - timeout");
           return null;
         } catch (Exception ex) {
           LOGGER.warn("Error", ex);
@@ -256,6 +258,8 @@ public class KafkaChannel extends BasicChannelSemantics {
             messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
           }
           producer.send(messages);
+          serializedEvents.clear();
+          serializedEvents = null; // help gc
           LOGGER.info("Put events");
         } catch (Exception ex) {
           LOGGER.warn("Sending events to Kafka failed", ex);
@@ -263,11 +267,10 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if (failedEvents.get().isEmpty()) {
-          consumerAndIter.get().consumer.commitOffsets();
+        if (failedEvents.isEmpty()) {
+          consumer.commitOffsets();
         }
-        serializedEvents.clear();
-        serializedEvents = null; // help gc
+        events.clear();
       }
     }
 
@@ -275,11 +278,9 @@ public class KafkaChannel extends BasicChannelSemantics {
     protected void doRollback() throws InterruptedException {
       if (type.equals(TransactionType.PUT)) {
         serializedEvents.clear();
-        serializedEvents = null;
       } else {
-        failedEvents.get().addAll(events);
+        failedEvents.addAll(events);
         events.clear();
-        events = null;
       }
     }
   }
@@ -290,6 +291,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     ConsumerIterator<byte[], byte[]> iterator;
   }
 }
+
 class KafkaChannelEvent implements Serializable {
 
   private static final long serialVersionUID = 8702461677509231736L;
