@@ -27,7 +27,7 @@ public class KafkaChannelConfiguration {
   public static final String TOPIC = "topic";
   public static final String GROUP_ID = "group.id";
   public static final String GROUP_ID_FLUME = "groupId";
-  public static final String AUTO_COMMIT_ENABLED = "auto.commit.enabled";
+  public static final String AUTO_COMMIT_ENABLED = "auto.commit.enable";
   public static final String ZOOKEEPER_CONNECT = "zookeeper.connect";
   public static final String ZOOKEEPER_CONNECT_FLUME_KEY = "zookeeperConnect";
   public static final String DEFAULT_GROUP_ID = "flume";

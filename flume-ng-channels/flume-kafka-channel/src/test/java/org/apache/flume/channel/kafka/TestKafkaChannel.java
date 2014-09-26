@@ -20,16 +20,18 @@ package org.apache.flume.channel.kafka;
 
 import org.apache.flume.Context;
 import org.apache.flume.Event;
+import org.apache.flume.Transaction;
+import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
 import org.apache.flume.sink.kafka.util.TestUtil;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TestKafkaChannel {
 
@@ -46,12 +48,16 @@ public class TestKafkaChannel {
   }
 
   @Test
-  public void testKafkaChannel() {
+  public void testKafkaChannel() throws Exception {
+    System.out.println("Starting..");
     Context context = prepareDefaultContext();
-    KafkaChannel channel = new KafkaChannel();
-    List<List<Event>> events = new ArrayList<List<Event>>();
+    final KafkaChannel channel = new KafkaChannel();
+    Configurables.configure(channel, context);
+    channel.start();
+    final List<List<Event>> events = new ArrayList<List<Event>>();
     for (int i = 0; i < 5; i++) {
       List<Event> eventList = new ArrayList<Event>(10);
+      events.add(eventList);
       for (int j = 0; j < 10; j++) {
         Map<String, String> hdrs = new HashMap<String, String>();
         hdrs.put("header", String.valueOf(j));
@@ -59,14 +65,66 @@ public class TestKafkaChannel {
           hdrs));
       }
     }
-
-
+    ExecutorCompletionService<Void> submitterSvc = new ExecutorCompletionService<Void>(Executors
+      .newFixedThreadPool(10));
+    final int totalEvents = 50;
+    for (int i = 0; i < 5; i++) {
+      final int index = i;
+      submitterSvc.submit(new Callable<Void>() {
+        @Override
+        public Void call() {
+          Transaction tx = channel.getTransaction();
+          tx.begin();
+          List<Event> eventsToPut = events.get(index);
+          for (int j = 0; j < 10; j++) {
+            channel.put(eventsToPut.get(j));
+          }
+          tx.commit();
+          tx.close();
+          return null;
+        }
+      });
+      final List<Event> eventsPulled = Collections.synchronizedList(new
+        ArrayList<Event>(50));
+      final AtomicInteger counter = new AtomicInteger(0);
+      for (int k = 0; k < 5; k++) {
+        submitterSvc.submit(new Callable<Void>() {
+          @Override
+          public Void call() {
+            Transaction tx = null;
+            while (counter.get() < 50) {
+              if (tx == null) {
+                tx = channel.getTransaction();
+                tx.begin();
+              }
+              Event e = channel.take();
+              if (e != null) {
+                eventsPulled.add(e);
+                counter.incrementAndGet();
+              } else {
+                tx.commit();
+                tx.close();
+                tx = null;
+              }
+            }
+            return null;
+          }
+        });
+      }
+//      int completed = 0;
+//      while (completed < 10) {
+//        submitterSvc.take();
+//        completed++;
+//      }
+      Thread.sleep(10000);
+      Assert.assertFalse(eventsPulled.isEmpty());
+    }
   }
 
   private Context prepareDefaultContext() {
     // Prepares a default context with Kafka Server Properties
     Context context = new Context();
-    context.put(KafkaChannelConfiguration.BROKER_LIST_KEY,
+    context.put(KafkaChannelConfiguration.BROKER_LIST_FLUME_KEY,
       testUtil.getKafkaServerUrl());
     context.put(KafkaChannelConfiguration.ZOOKEEPER_CONNECT_FLUME_KEY,
       testUtil.getZkUrl());
