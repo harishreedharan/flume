@@ -267,6 +267,13 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
+        // There is an issue with this. Currently, Kafka API allows commits
+        // per consumer connector -- all partitions are committed. Now,
+        // when this call happens, all messages in flight with the sinks get
+        // committed too. This can lead to data loss.
+        // Tried using multiple consumer connectors within the same app with
+        // same group id, so we get one connector per partition - that causes
+        // none of the threads to get messages at all. Now sure what do here.
         if (failedEvents.isEmpty()) {
           consumer.commitOffsets();
         }
