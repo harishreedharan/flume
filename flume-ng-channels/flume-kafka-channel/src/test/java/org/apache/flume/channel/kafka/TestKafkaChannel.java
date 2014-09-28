@@ -168,7 +168,7 @@ public class TestKafkaChannel {
       sessionTimeoutMs, connectionTimeoutMs,
       ZKStringSerializer$.MODULE$);
 
-    int numPartitions = 1;
+    int numPartitions = 5;
     int replicationFactor = 1;
     Properties topicConfig = new Properties();
     AdminUtils.createTopic(zkClient, topicName, numPartitions,

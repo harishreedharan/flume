@@ -19,8 +19,6 @@
 package org.apache.flume.channel.kafka;
 
 import com.google.common.base.Optional;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import kafka.consumer.*;
 import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.javaapi.producer.Producer;
@@ -44,9 +42,6 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class KafkaChannel extends BasicChannelSemantics {
@@ -183,7 +178,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       kafkaConf.put(BROKER_LIST_KEY, brokerList);
       kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
       kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout * 100));
+      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
       kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
 //    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
 //    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
@@ -273,11 +268,13 @@ public class KafkaChannel extends BasicChannelSemantics {
             toStringMap(event.getHeaders()));
           removed = true;
         } catch (ConsumerTimeoutException ex) {
-          LOGGER.debug("Timed out while waiting for data to come from Kafka",
-            ex);
+          if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Timed out while waiting for data to come from Kafka",
+              ex);
+          }
           return null;
         } catch (Exception ex) {
-          LOGGER.warn("Error", ex);
+          LOGGER.warn("Error while getting events from Kafka", ex);
           throw new ChannelException("Error while getting events from Kafka",
             ex);
         }
