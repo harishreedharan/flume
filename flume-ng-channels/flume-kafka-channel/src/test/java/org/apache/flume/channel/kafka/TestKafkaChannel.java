@@ -56,7 +56,6 @@ public class TestKafkaChannel {
 
   @Test
   public void testKafkaChannel() throws Exception {
-    System.out.println("Starting..");
     Context context = prepareDefaultContext();
     final KafkaChannel channel = new KafkaChannel();
     Configurables.configure(channel, context);
@@ -80,7 +79,6 @@ public class TestKafkaChannel {
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
     for (int k = 0; k < 5; k++) {
-      final int t = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
@@ -90,7 +88,6 @@ public class TestKafkaChannel {
               tx = channel.getTransaction();
               tx.begin();
             }
-            System.out.println("Taking: " + t);
             try {
               Event e = channel.take();
               if (e != null) {
@@ -116,7 +113,6 @@ public class TestKafkaChannel {
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
-          System.out.println("Txn: " + index);
           Transaction tx = channel.getTransaction();
           tx.begin();
           List<Event> eventsToPut = events.get(index);
@@ -132,7 +128,6 @@ public class TestKafkaChannel {
         }
       });
     }
-    System.out.println("Submitted");
     int completed = 0;
       while (completed < 10) {
         submitterSvc.take();
@@ -147,10 +142,12 @@ public class TestKafkaChannel {
     }
     for(int i = 0; i < 5; i++) {
       for (int j = 0; j < 10; j++) {
-        Assert.assertTrue(eventStrings.contains(String.valueOf(i) + " - " +
-          String.valueOf(j)));
+        String v = String.valueOf(i) + " - " + String.valueOf(j);
+        Assert.assertTrue(eventStrings.contains(v));
+        eventStrings.remove(v);
       }
     }
+    Assert.assertTrue(eventStrings.isEmpty());
   }
 
   private Context prepareDefaultContext() {

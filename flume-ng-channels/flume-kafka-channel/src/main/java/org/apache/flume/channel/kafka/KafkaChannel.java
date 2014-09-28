@@ -26,10 +26,7 @@ import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.javaapi.producer.Producer;
 import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
-import org.apache.avro.io.Decoder;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.Encoder;
-import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.io.*;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.flume.*;
@@ -206,36 +203,46 @@ public class KafkaChannel extends BasicChannelSemantics {
     // For Puts
     private Optional<ByteArrayOutputStream> tempOutStream = Optional
       .absent();
-    private Optional<ObjectOutputStream> tempDataOut = Optional.absent();
 
     // For put transactions, serialize the events and batch them and send it.
-    private List<byte[]> serializedEvents = null;
+    private Optional<LinkedList<byte[]>> serializedEvents = Optional.absent();
     // For take transactions, deserialize and hold them till commit goes through
-    private List<Event> events = null;
+    private Optional<LinkedList<Event>> events = Optional.absent();
     private boolean removed = false;
+    private Optional<SpecificDatumWriter<AvroFlumeEvent>> writer =
+      Optional.absent();
+    private Optional<SpecificDatumReader<AvroFlumeEvent>> reader =
+      Optional.absent();
+
+    // Fine to use null for initial value, Avro will create new ones if this
+    // is null
+    private BinaryEncoder encoder = null;
+    private BinaryDecoder decoder = null;
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
       type = TransactionType.PUT;
-      if (serializedEvents == null) {
-        serializedEvents = Lists.newLinkedList();
+      if (!serializedEvents.isPresent()) {
+        serializedEvents = Optional.of(new LinkedList<byte[]>());
       }
+
       try {
-        if (!tempDataOut.isPresent()) {
+        if (!tempOutStream.isPresent()) {
           tempOutStream = Optional.of(new ByteArrayOutputStream());
         }
+        if (!writer.isPresent()) {
+          writer = Optional.of(new
+            SpecificDatumWriter<AvroFlumeEvent>(AvroFlumeEvent.class));
+        }
         tempOutStream.get().reset();
-        AvroFlumeEvent e = new AvroFlumeEvent(toCharSeqMap(event.getHeaders()
-        ), ByteBuffer.wrap(event.getBody()));
-        Encoder encoder =
-          EncoderFactory.get().directBinaryEncoder(tempOutStream.get(), null);
-        SpecificDatumWriter<AvroFlumeEvent> writer = new SpecificDatumWriter
-          <AvroFlumeEvent>(AvroFlumeEvent.class);
-        writer.write(e, encoder);
-        serializedEvents.add(tempOutStream.get().toByteArray());
+        AvroFlumeEvent e = new AvroFlumeEvent(
+          toCharSeqMap(event.getHeaders()), ByteBuffer.wrap(event.getBody()));
+        encoder = EncoderFactory.get()
+          .directBinaryEncoder(tempOutStream.get(), encoder);
+        writer.get().write(e, encoder);
         // Not really possible to avoid this copy :(
+        serializedEvents.get().add(tempOutStream.get().toByteArray());
       } catch (Exception e) {
-        e.printStackTrace();
         throw new ChannelException("Error while serializing event", e);
       }
     }
@@ -243,8 +250,8 @@ public class KafkaChannel extends BasicChannelSemantics {
     @Override
     protected Event doTake() throws InterruptedException {
       type = TransactionType.TAKE;
-      if (events == null) {
-        events = Lists.newLinkedList();
+      if (!events.isPresent()) {
+        events = Optional.of(new LinkedList<Event>());
       }
       Event e;
       if (!failedEvents.get().isEmpty()) {
@@ -254,17 +261,20 @@ public class KafkaChannel extends BasicChannelSemantics {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
           it.hasNext();
-          ByteArrayInputStream in = new ByteArrayInputStream(
-            it.next().message());
-          Decoder decoder = DecoderFactory.get().directBinaryDecoder(in, null);
-          SpecificDatumReader<AvroFlumeEvent> reader = new
-            SpecificDatumReader<AvroFlumeEvent>(AvroFlumeEvent.class);
-          AvroFlumeEvent event = reader.read(null, decoder);
+          ByteArrayInputStream in =
+            new ByteArrayInputStream(it.next().message());
+          decoder = DecoderFactory.get().directBinaryDecoder(in, decoder);
+          if (!reader.isPresent()) {
+            reader = Optional.of(
+              new SpecificDatumReader<AvroFlumeEvent>(AvroFlumeEvent.class));
+          }
+          AvroFlumeEvent event = reader.get().read(null, decoder);
           e = EventBuilder.withBody(event.getBody().array(),
             toStringMap(event.getHeaders()));
           removed = true;
         } catch (ConsumerTimeoutException ex) {
-          LOGGER.warn("Error - timeout", ex);
+          LOGGER.debug("Timed out while waiting for data to come from Kafka",
+            ex);
           return null;
         } catch (Exception ex) {
           LOGGER.warn("Error", ex);
@@ -272,8 +282,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       }
-      LOGGER.info("Got event from kafka!!");
-      events.add(e);
+      events.get().add(e);
       return e;
     }
 
@@ -282,13 +291,13 @@ public class KafkaChannel extends BasicChannelSemantics {
       if (type.equals(TransactionType.PUT)) {
         try {
           List<KeyedMessage<String, byte[]>> messages = new
-            ArrayList<KeyedMessage<String, byte[]>>(serializedEvents.size());
-          for (byte[] event : serializedEvents) {
+            ArrayList<KeyedMessage<String, byte[]>>(serializedEvents.get()
+            .size());
+          for (byte[] event : serializedEvents.get()) {
             messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
           }
           producer.send(messages);
-          serializedEvents.clear();
-          LOGGER.info("Put events");
+          serializedEvents.get().clear();
         } catch (Exception ex) {
           LOGGER.warn("Sending events to Kafka failed", ex);
           throw new ChannelException("Commit failed as send to Kafka failed",
@@ -298,17 +307,17 @@ public class KafkaChannel extends BasicChannelSemantics {
         if (failedEvents.get().isEmpty() && removed) {
           consumerAndIter.get().consumer.commitOffsets();
         }
-        events.clear();
+        events.get().clear();
       }
     }
 
     @Override
     protected void doRollback() throws InterruptedException {
       if (type.equals(TransactionType.PUT)) {
-        serializedEvents.clear();
+        serializedEvents.get().clear();
       } else {
-        failedEvents.get().addAll(events);
-        events.clear();
+        failedEvents.get().addAll(events.get());
+        events.get().clear();
       }
     }
   }
@@ -318,6 +327,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     ConsumerConnector consumer;
     ConsumerIterator<byte[], byte[]> iterator;
   }
+
   /**
    * Helper function to convert a map of String to a map of CharSequence.
    */
@@ -342,18 +352,5 @@ public class KafkaChannel extends BasicChannelSemantics {
       stringMap.put(entry.getKey().toString(), entry.getValue().toString());
     }
     return stringMap;
-  }
-}
-
-class KafkaChannelEvent implements Serializable {
-
-  private static final long serialVersionUID = 8702461677509231736L;
-
-  final Map<String, String> headers;
-  final byte[] body;
-
-  KafkaChannelEvent(Map<String, String> headers, byte[] body) {
-    this.headers = headers;
-    this.body = body;
   }
 }
