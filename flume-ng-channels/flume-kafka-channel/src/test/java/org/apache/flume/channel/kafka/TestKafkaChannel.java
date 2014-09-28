@@ -76,31 +76,6 @@ public class TestKafkaChannel {
     ExecutorCompletionService<Void> submitterSvc =
       new ExecutorCompletionService<Void>(Executors
         .newCachedThreadPool());
-    final int totalEvents = 50;
-    for (int i = 0; i < 5; i++) {
-      final int index = i;
-      submitterSvc.submit(new Callable<Void>() {
-        @Override
-        public Void call() {
-          System.out.println("Txn: " + index);
-          Transaction tx = channel.getTransaction();
-          tx.begin();
-          List<Event> eventsToPut = events.get(index);
-          for (int j = 0; j < 10; j++) {
-            channel.put(eventsToPut.get(j));
-          }
-          try {
-            tx.commit();
-          } finally {
-            tx.close();
-          }
-
-
-          return null;
-        }
-      });
-    }
-    System.out.println("Submitted");
     final List<Event> eventsPulled = Collections.synchronizedList(new
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
@@ -134,13 +109,38 @@ public class TestKafkaChannel {
         }
       });
     }
+    Thread.sleep(10000);
+    final int totalEvents = 50;
+    for (int i = 0; i < 5; i++) {
+      final int index = i;
+      submitterSvc.submit(new Callable<Void>() {
+        @Override
+        public Void call() {
+          System.out.println("Txn: " + index);
+          Transaction tx = channel.getTransaction();
+          tx.begin();
+          List<Event> eventsToPut = events.get(index);
+          for (int j = 0; j < 10; j++) {
+            channel.put(eventsToPut.get(j));
+          }
+          try {
+            tx.commit();
+          } finally {
+            tx.close();
+          }
+          return null;
+        }
+      });
+    }
+    System.out.println("Submitted");
     int completed = 0;
-//      while (completed < 10) {
-//        submitterSvc.take();
-//        completed++;
-//      }
-    Thread.sleep(40000);
+      while (completed < 10) {
+        submitterSvc.take();
+        completed++;
+      }
+//    Thread.sleep(40000);
     Assert.assertFalse(eventsPulled.isEmpty());
+    Assert.assertTrue(eventsPulled.size() == 50);
   }
 
   private Context prepareDefaultContext() {
