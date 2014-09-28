@@ -43,7 +43,6 @@ public class TestKafkaChannel {
   @BeforeClass
   public static void setup() throws Exception{
     testUtil.prepare();
-    Thread.sleep(5000);
     try {
       createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
     } catch (Exception e) {
@@ -68,9 +67,10 @@ public class TestKafkaChannel {
       events.add(eventList);
       for (int j = 0; j < 10; j++) {
         Map<String, String> hdrs = new HashMap<String, String>();
-        hdrs.put("header", String.valueOf(j));
-        eventList.add(EventBuilder.withBody(String.valueOf(j).getBytes(),
-          hdrs));
+        String v = (String.valueOf(i) + " - " + String
+          .valueOf(j));
+        hdrs.put("header", v);
+        eventList.add(EventBuilder.withBody(v.getBytes(), hdrs));
       }
     }
     ExecutorCompletionService<Void> submitterSvc =
@@ -109,7 +109,7 @@ public class TestKafkaChannel {
         }
       });
     }
-    Thread.sleep(10000);
+    Thread.sleep(5000);
     final int totalEvents = 50;
     for (int i = 0; i < 5; i++) {
       final int index = i;
@@ -138,9 +138,19 @@ public class TestKafkaChannel {
         submitterSvc.take();
         completed++;
       }
-//    Thread.sleep(40000);
     Assert.assertFalse(eventsPulled.isEmpty());
     Assert.assertTrue(eventsPulled.size() == 50);
+    Set<String> eventStrings = new HashSet<String>();
+    for(Event e : eventsPulled) {
+      Assert.assertEquals(e.getHeaders().get("header"), new String(e.getBody()));
+      eventStrings.add(e.getHeaders().get("header"));
+    }
+    for(int i = 0; i < 5; i++) {
+      for (int j = 0; j < 10; j++) {
+        Assert.assertTrue(eventStrings.contains(String.valueOf(i) + " - " +
+          String.valueOf(j)));
+      }
+    }
   }
 
   private Context prepareDefaultContext() {
