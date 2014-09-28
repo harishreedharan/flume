@@ -41,4 +41,7 @@ public class KafkaChannelConfiguration {
     "kafka.serializer.StringEncoder";
   public static final String MESSAGE_SERIALIZER_KEY = "serializer.class";
   public static final String KEY_SERIALIZER_KEY = "key.serializer.class";
+
+  public static final String PARSE_AS_FLUME_EVENT = "parseAsFlumeEvent";
+  public static final boolean DEFAULT_PARSE_AS_FLUME_EVENT = true;
 }

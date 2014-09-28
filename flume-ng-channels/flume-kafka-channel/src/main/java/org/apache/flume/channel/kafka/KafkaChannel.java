@@ -19,6 +19,7 @@
 package org.apache.flume.channel.kafka;
 
 import com.google.common.base.Optional;
+import com.google.common.collect.Maps;
 import kafka.consumer.*;
 import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.javaapi.producer.Producer;
@@ -54,6 +55,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   private Producer<String, byte[]> producer;
 
   private AtomicReference<String> topic = new AtomicReference<String>();
+  private boolean parseAsFlumeEvent = DEFAULT_PARSE_AS_FLUME_EVENT;
   private final Map<String, Integer> topicCountMap =
     Collections.synchronizedMap(new HashMap<String, Integer>());
 
@@ -185,6 +187,8 @@ public class KafkaChannel extends BasicChannelSemantics {
       kafkaConf.put("producer.type", "sync");
       LOGGER.info(kafkaConf.toString());
     }
+    parseAsFlumeEvent =
+      ctx.getBoolean(PARSE_AS_FLUME_EVENT, DEFAULT_PARSE_AS_FLUME_EVENT);
   }
 
   private enum TransactionType {
@@ -242,6 +246,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       }
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     protected Event doTake() throws InterruptedException {
       type = TransactionType.TAKE;
@@ -256,16 +261,21 @@ public class KafkaChannel extends BasicChannelSemantics {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
           it.hasNext();
-          ByteArrayInputStream in =
-            new ByteArrayInputStream(it.next().message());
-          decoder = DecoderFactory.get().directBinaryDecoder(in, decoder);
-          if (!reader.isPresent()) {
-            reader = Optional.of(
-              new SpecificDatumReader<AvroFlumeEvent>(AvroFlumeEvent.class));
+          if (parseAsFlumeEvent) {
+            ByteArrayInputStream in =
+              new ByteArrayInputStream(it.next().message());
+            decoder = DecoderFactory.get().directBinaryDecoder(in, decoder);
+            if (!reader.isPresent()) {
+              reader = Optional.of(
+                new SpecificDatumReader<AvroFlumeEvent>(AvroFlumeEvent.class));
+            }
+            AvroFlumeEvent event = reader.get().read(null, decoder);
+            e = EventBuilder.withBody(event.getBody().array(),
+              toStringMap(event.getHeaders()));
+          } else {
+            e = EventBuilder.withBody(it.next().message(),
+              Collections.EMPTY_MAP);
           }
-          AvroFlumeEvent event = reader.get().read(null, decoder);
-          e = EventBuilder.withBody(event.getBody().array(),
-            toStringMap(event.getHeaders()));
           removed = true;
         } catch (ConsumerTimeoutException ex) {
           if (LOGGER.isDebugEnabled()) {
