@@ -20,11 +20,18 @@ package org.apache.flume.channel.kafka;
 
 import com.google.common.base.Optional;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import kafka.consumer.*;
 import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.javaapi.producer.Producer;
 import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
+import org.apache.avro.io.Decoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.Encoder;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.flume.*;
 import org.apache.flume.channel.BasicChannelSemantics;
 import org.apache.flume.channel.BasicTransactionSemantics;
@@ -33,10 +40,12 @@ import org.apache.flume.conf.ConfigurationException;
 import static org.apache.flume.channel.kafka.KafkaChannelConfiguration.*;
 
 import org.apache.flume.event.EventBuilder;
+import org.apache.flume.source.avro.AvroFlumeEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -54,19 +63,61 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private AtomicReference<String> topic = new AtomicReference<String>();
   private final Map<String, Integer> topicCountMap =
-    new HashMap<String, Integer>();
+    Collections.synchronizedMap(new HashMap<String, Integer>());
 
   // Track all consumers to close them eventually.
   private final List<ConsumerAndIterator> consumers =
     Collections.synchronizedList(new LinkedList<ConsumerAndIterator>());
-  private final BlockingQueue<Event> failedEvents = new
-    LinkedBlockingQueue<Event>();
+  private final ThreadLocal<List<Event>> failedEvents = new
+    ThreadLocal<List<Event>>() {
+      @Override
+      protected List<Event> initialValue() {
+        return new LinkedList<Event>();
+      }
+    };
 
-  // Kafka needs one consumer per thread, though Kafka somehow manages this
-  // internally. But it is painful to handle the instances correctly,
-  // so lets keep track of it ourselves - this is more explicit and cleaner.
-  private ThreadLocal<ConsumerAndIterator> consumerAndIter;
-  private kafka.javaapi.consumer.ConsumerConnector consumer;
+  /* Each ConsumerConnector commit will commit all partitions owned by it. To
+   * ensure that each partition is only committed when all events are
+   * actually done, we will need to keep a ConsumerConnector per thread.
+   * See Neha's answer here:
+   * http://grokbase.com/t/kafka/users/13b4gmk2jk/commit-offset-per-topic
+   * Since only one consumer connector will a partition at any point in time,
+   * when we commit the partition we would have committed all events to the
+   * final destination from that partition.
+   *
+   * If a new partition gets assigned to this connector,
+   * my understanding is that all message from the last partition commit will
+   * get replayed which may cause duplicates -- which is fine as this
+   * happens only on partition rebalancing which is on failure or new nodes
+   * coming up, which is rare.
+   */
+  private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
+    ThreadLocal<ConsumerAndIterator>() {
+
+      @Override
+      public ConsumerAndIterator initialValue() {
+        try {
+          ConsumerConfig consumerConfig = new ConsumerConfig(kafkaConf);
+          ConsumerConnector consumer =
+            Consumer.createJavaConsumerConnector(consumerConfig);
+          Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
+            consumer.createMessageStreams(topicCountMap);
+          final List<KafkaStream<byte[], byte[]>> streamList = consumerMap
+            .get(topic.get());
+          ConsumerAndIterator ret = new ConsumerAndIterator();
+          synchronized (kafkaConf) {
+            KafkaStream<byte[], byte[]> stream = streamList.remove(0);
+            ret.consumer = consumer;
+            ret.iterator = stream.iterator();
+            consumers.add(ret);
+            LOGGER.info("Created new consumer to connect to Kafka");
+          }
+          return ret;
+        } catch (Exception e) {
+          throw new FlumeException("Unable to connect to Kafka", e);
+        }
+      }
+    };
 
   @Override
   public void start() {
@@ -77,37 +128,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       }
       // We always have just one topic being read by one thread
       LOGGER.info("Topic = " + topic.get());
-      topicCountMap.put(topic.get(), 10);
-      ConsumerConfig consumerConfig =
-        new ConsumerConfig(kafkaConf);
-      consumer =
-        Consumer.createJavaConsumerConnector(consumerConfig);
-      Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
-        consumer.createMessageStreams(topicCountMap);
-      final Queue<KafkaStream<byte[], byte[]>> streamList =
-        new LinkedBlockingDeque<KafkaStream<byte[], byte[]>>(consumerMap.get
-          (topic.get()));
-
-      consumerAndIter = new
-        ThreadLocal<ConsumerAndIterator>() {
-
-          @Override
-          public ConsumerAndIterator initialValue() {
-            try {
-              ConsumerAndIterator ret = new ConsumerAndIterator();
-              synchronized (kafkaConf) {
-                KafkaStream<byte[], byte[]> stream = streamList.poll();
-                ret.iterator = stream.iterator();
-                consumers.add(ret);
-                LOGGER.info("Created new consumer to connect to Kafka");
-              }
-              return ret;
-            } catch (Exception e) {
-              throw new FlumeException("Unable to connect to Kafka", e);
-            }
-          }
-
-        };
+      topicCountMap.put(topic.get(), 1);
       super.start();
     } catch (Exception e) {
       LOGGER.error("Could not start producer");
@@ -121,7 +142,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   public void stop() {
     for (ConsumerAndIterator c : consumers) {
       try {
-        consumer.shutdown();
+        c.consumer.shutdown();
       } catch (Exception ex) {
         LOGGER.warn("Error while shutting down consumer.", ex);
       }
@@ -165,7 +186,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       kafkaConf.put(BROKER_LIST_KEY, brokerList);
       kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
       kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
+      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout * 100));
       kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
 //    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
 //    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
@@ -191,6 +212,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     private List<byte[]> serializedEvents = null;
     // For take transactions, deserialize and hold them till commit goes through
     private List<Event> events = null;
+    private boolean removed = false;
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
@@ -201,16 +223,17 @@ public class KafkaChannel extends BasicChannelSemantics {
       try {
         if (!tempDataOut.isPresent()) {
           tempOutStream = Optional.of(new ByteArrayOutputStream());
-          tempDataOut =
-            Optional.of(new ObjectOutputStream(tempOutStream.get()));
         }
         tempOutStream.get().reset();
-        KafkaChannelEvent kEvent = new KafkaChannelEvent(event.getHeaders(),
-          event.getBody());
-        tempDataOut.get().writeObject(kEvent);
-        tempDataOut.get().flush();
-        // Not really possible to avoid this copy :(
+        AvroFlumeEvent e = new AvroFlumeEvent(toCharSeqMap(event.getHeaders()
+        ), ByteBuffer.wrap(event.getBody()));
+        Encoder encoder =
+          EncoderFactory.get().directBinaryEncoder(tempOutStream.get(), null);
+        SpecificDatumWriter<AvroFlumeEvent> writer = new SpecificDatumWriter
+          <AvroFlumeEvent>(AvroFlumeEvent.class);
+        writer.write(e, encoder);
         serializedEvents.add(tempOutStream.get().toByteArray());
+        // Not really possible to avoid this copy :(
       } catch (Exception e) {
         e.printStackTrace();
         throw new ChannelException("Error while serializing event", e);
@@ -224,18 +247,24 @@ public class KafkaChannel extends BasicChannelSemantics {
         events = Lists.newLinkedList();
       }
       Event e;
-      if (!failedEvents.isEmpty()) {
-        e = failedEvents.poll();
+      if (!failedEvents.get().isEmpty()) {
+        e = failedEvents.get().remove(0);
+        removed = true;
       } else {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
           it.hasNext();
-          ObjectInputStream stream = new ObjectInputStream(new
-            ByteArrayInputStream(it.next().message()));
-          KafkaChannelEvent kEvent = (KafkaChannelEvent) stream.readObject();
-          e = EventBuilder.withBody(kEvent.body, kEvent.headers);
+          ByteArrayInputStream in = new ByteArrayInputStream(
+            it.next().message());
+          Decoder decoder = DecoderFactory.get().directBinaryDecoder(in, null);
+          SpecificDatumReader<AvroFlumeEvent> reader = new
+            SpecificDatumReader<AvroFlumeEvent>(AvroFlumeEvent.class);
+          AvroFlumeEvent event = reader.read(null, decoder);
+          e = EventBuilder.withBody(event.getBody().array(),
+            toStringMap(event.getHeaders()));
+          removed = true;
         } catch (ConsumerTimeoutException ex) {
-          LOGGER.warn("Error - timeout");
+          LOGGER.warn("Error - timeout", ex);
           return null;
         } catch (Exception ex) {
           LOGGER.warn("Error", ex);
@@ -259,7 +288,6 @@ public class KafkaChannel extends BasicChannelSemantics {
           }
           producer.send(messages);
           serializedEvents.clear();
-          serializedEvents = null; // help gc
           LOGGER.info("Put events");
         } catch (Exception ex) {
           LOGGER.warn("Sending events to Kafka failed", ex);
@@ -267,15 +295,8 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        // There is an issue with this. Currently, Kafka API allows commits
-        // per consumer connector -- all partitions are committed. Now,
-        // when this call happens, all messages in flight with the sinks get
-        // committed too. This can lead to data loss.
-        // Tried using multiple consumer connectors within the same app with
-        // same group id, so we get one connector per partition - that causes
-        // none of the threads to get messages at all. Now sure what do here.
-        if (failedEvents.isEmpty()) {
-          consumer.commitOffsets();
+        if (failedEvents.get().isEmpty() && removed) {
+          consumerAndIter.get().consumer.commitOffsets();
         }
         events.clear();
       }
@@ -286,7 +307,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       if (type.equals(TransactionType.PUT)) {
         serializedEvents.clear();
       } else {
-        failedEvents.addAll(events);
+        failedEvents.get().addAll(events);
         events.clear();
       }
     }
@@ -296,6 +317,31 @@ public class KafkaChannel extends BasicChannelSemantics {
   private class ConsumerAndIterator {
     ConsumerConnector consumer;
     ConsumerIterator<byte[], byte[]> iterator;
+  }
+  /**
+   * Helper function to convert a map of String to a map of CharSequence.
+   */
+  private static Map<CharSequence, CharSequence> toCharSeqMap(
+    Map<String, String> stringMap) {
+    Map<CharSequence, CharSequence> charSeqMap =
+      new HashMap<CharSequence, CharSequence>();
+    for (Map.Entry<String, String> entry : stringMap.entrySet()) {
+      charSeqMap.put(entry.getKey(), entry.getValue());
+    }
+    return charSeqMap;
+  }
+
+  /**
+   * Helper function to convert a map of CharSequence to a map of String.
+   */
+  private static Map<String, String> toStringMap(
+    Map<CharSequence, CharSequence> charSeqMap) {
+    Map<String, String> stringMap =
+      new HashMap<String, String>();
+    for (Map.Entry<CharSequence, CharSequence> entry : charSeqMap.entrySet()) {
+      stringMap.put(entry.getKey().toString(), entry.getValue().toString());
+    }
+    return stringMap;
   }
 }
 
