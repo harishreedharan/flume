@@ -19,7 +19,6 @@
 package org.apache.flume.channel.kafka;
 
 import com.google.common.base.Optional;
-import com.google.common.collect.Maps;
 import kafka.consumer.*;
 import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.javaapi.producer.Producer;
@@ -142,6 +141,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       }
     }
     super.stop();
+    producer.close();
   }
 
   @Override
