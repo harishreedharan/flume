@@ -149,6 +149,10 @@ public class KafkaChannel extends BasicChannelSemantics {
     return new KafkaTransaction();
   }
 
+  Properties getKafkaConf() {
+    return kafkaConf;
+  }
+
   @Override
   public void configure(Context ctx) {
     String topicStr = ctx.getString(TOPIC);
@@ -185,6 +189,7 @@ public class KafkaChannel extends BasicChannelSemantics {
 //    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
 //    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
       kafkaConf.put("producer.type", "sync");
+      kafkaConf.put("auto.offset.reset", "smallest");
       LOGGER.info(kafkaConf.toString());
     }
     parseAsFlumeEvent =
