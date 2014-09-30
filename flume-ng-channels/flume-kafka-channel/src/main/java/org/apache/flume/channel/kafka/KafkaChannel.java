@@ -140,8 +140,8 @@ public class KafkaChannel extends BasicChannelSemantics {
         LOGGER.warn("Error while shutting down consumer.", ex);
       }
     }
-    super.stop();
     producer.close();
+    super.stop();
   }
 
   @Override
