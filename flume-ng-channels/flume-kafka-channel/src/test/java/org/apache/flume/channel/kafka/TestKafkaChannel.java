@@ -19,7 +19,11 @@
 package org.apache.flume.channel.kafka;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import kafka.admin.AdminUtils;
+import kafka.javaapi.producer.Producer;
+import kafka.producer.KeyedMessage;
+import kafka.producer.ProducerConfig;
 import kafka.utils.ZKStringSerializer$;
 import org.I0Itec.zkclient.ZkClient;
 import org.apache.flume.Context;
@@ -56,20 +60,14 @@ public class TestKafkaChannel {
 
   @Test
   public void testSuccess() throws Exception {
-    Context context = prepareDefaultContext(true);
-    final KafkaChannel channel = new KafkaChannel();
-    Configurables.configure(channel, context);
-    channel.start();
+    final KafkaChannel channel = startChannel(true);
     writeAndVerify(false, channel);
     channel.stop();
   }
 
   @Test
   public void testRollbacks() throws Exception {
-    Context context = prepareDefaultContext(true);
-    final KafkaChannel channel = new KafkaChannel();
-    Configurables.configure(channel, context);
-    channel.start();
+    final KafkaChannel channel = startChannel(true);
     writeAndVerify(true, channel);
     channel.stop();
   }
@@ -79,16 +77,56 @@ public class TestKafkaChannel {
     doTestStopAndStart(false, false);
   }
 
-//  @Test
+  @Test
   public void testStopAndStartWithRollback() throws Exception {
     doTestStopAndStart(true, true);
   }
 
-//  @Test
+  @Test
   public void testStopAndStartWithRollbackAndNoRetry() throws Exception {
     doTestStopAndStart(true, false);
   }
 
+  @Test
+  public void testNoParsingAsFlumeAgent() throws Exception {
+    final KafkaChannel channel = startChannel(false);
+    Producer<String, byte[]> producer = new Producer<String, byte[]>(
+      new ProducerConfig (channel.getKafkaConf()));
+    List<KeyedMessage<String, byte[]>> original = Lists.newArrayList();
+    for (int i = 0; i < 50; i++) {
+      KeyedMessage<String, byte[]> data = new KeyedMessage<String,
+        byte[]>(KafkaChannelConfiguration.DEFAULT_TOPIC,
+        String.valueOf(i).getBytes());
+      original.add(data);
+    }
+    producer.send(original);
+    ExecutorCompletionService<Void> submitterSvc = new
+      ExecutorCompletionService<Void>(Executors.newCachedThreadPool());
+    List<Event> events = pullEvents(channel, submitterSvc,
+      50, false, false);
+    wait(submitterSvc, 5);
+    Set<Integer> finals = Sets.newHashSet();
+    for (int i = 0; i < 50; i++) {
+      finals.add(Integer.parseInt(new String(events.get(i).getBody())));
+    }
+    for (int i = 0; i < 50; i++) {
+      Assert.assertTrue(finals.contains(i));
+      finals.remove(i);
+    }
+    Assert.assertTrue(finals.isEmpty());
+    channel.stop();
+  }
+
+  /**
+   * This method starts a channel, puts events into it. The channel is then
+   * stopped and restarted. Then we check to make sure if all events we put
+   * come out. Optionally, 10 events are rolled back,
+   * and optionally we restart the agent immediately after and we try to pull it
+   * out.
+   * @param rollback
+   * @param retryAfterRollback
+   * @throws Exception
+   */
   private void doTestStopAndStart(boolean rollback,
     boolean retryAfterRollback) throws Exception {
     final KafkaChannel channel = startChannel(true);
@@ -99,10 +137,7 @@ public class TestKafkaChannel {
     final List<List<Event>> events = createBaseList();
     putEvents(channel, events, submitterSvc);
     int completed = 0;
-    while (completed < 5) {
-      submitterSvc.take();
-      completed++;
-    }
+    wait(submitterSvc, 5);
     channel.stop();
     underlying.shutdownNow();
     underlying = Executors.newCachedThreadPool();
@@ -123,10 +158,11 @@ public class TestKafkaChannel {
       ExecutorCompletionService<Void> submitterSvc3 =
         new ExecutorCompletionService<Void>(underlying);
       final KafkaChannel channel3 = startChannel(true);
+      int expectedRemaining = 50 - eventsPulled.size();
       final List<Event> eventsPulled2 =
-        pullEvents(channel3, submitterSvc3, total, false, false);
-      Assert.assertTrue(eventsPulled2.size() == 10);
+        pullEvents(channel3, submitterSvc3, expectedRemaining, false, false);
       wait(submitterSvc3, 5);
+      Assert.assertTrue(eventsPulled2.size() == expectedRemaining);
       eventsPulled.addAll(eventsPulled2);
       channel3.stop();
       underlying.shutdownNow();
@@ -139,7 +175,6 @@ public class TestKafkaChannel {
     final KafkaChannel channel = new KafkaChannel();
     Configurables.configure(channel, context);
     channel.start();
-    Thread.sleep(2000);
     return channel;
   }
 
@@ -155,10 +190,8 @@ public class TestKafkaChannel {
     final List<Event> eventsPulled =
       pullEvents(channel, submitterSvc, 50, testRollbacks, false);
 
-    Thread.sleep(5000);
-
+    Thread.sleep(1000);
     putEvents(channel, events, submitterSvc);
-
     wait(submitterSvc, 10);
     verify(eventsPulled);
   }
@@ -299,17 +332,25 @@ public class TestKafkaChannel {
   }
 
   public static void createTopic(String topicName) {
-    // Create a ZooKeeper client
+    int numPartitions = 5;
     int sessionTimeoutMs = 10000;
     int connectionTimeoutMs = 10000;
     ZkClient zkClient = new ZkClient(testUtil.getZkUrl(),
       sessionTimeoutMs, connectionTimeoutMs,
       ZKStringSerializer$.MODULE$);
 
-    int numPartitions = 5;
     int replicationFactor = 1;
     Properties topicConfig = new Properties();
     AdminUtils.createTopic(zkClient, topicName, numPartitions,
       replicationFactor, topicConfig);
+  }
+
+  public static void deleteTopic(String topicName) {
+    int sessionTimeoutMs = 10000;
+    int connectionTimeoutMs = 10000;
+    ZkClient zkClient = new ZkClient(testUtil.getZkUrl(),
+      sessionTimeoutMs, connectionTimeoutMs,
+      ZKStringSerializer$.MODULE$);
+    AdminUtils.deleteTopic(zkClient, topicName);
   }
 }
