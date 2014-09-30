@@ -267,7 +267,6 @@ public class TestKafkaChannel {
                   tx.rollback();
                   System.out.println("Rolledback");
                   rolledBack.set(true);
-                  eventsLocal.clear();
                   if (!retryAfterRollback) {
                     tx.close();
                     break;
@@ -284,6 +283,7 @@ public class TestKafkaChannel {
               ex.printStackTrace();
             }
           }
+          eventsLocal.clear();
           return null;
         }
       });
