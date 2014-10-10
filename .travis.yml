@@ -1,4 +1,4 @@
 language: java
 jdk:
   - oraclejdk7
-script: mvn clean install -Dhadoop.profile=hbase-98
+script: cd flume-ng-channels/flume-kafka-channel;mvn clean install -Dhadoop.profile=hbase-98
