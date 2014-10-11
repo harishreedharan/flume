@@ -98,13 +98,11 @@ public class KafkaChannel extends BasicChannelSemantics {
           final List<KafkaStream<byte[], byte[]>> streamList = consumerMap
             .get(topic.get());
           ConsumerAndIterator ret = new ConsumerAndIterator();
-          synchronized (kafkaConf) {
-            KafkaStream<byte[], byte[]> stream = streamList.remove(0);
-            ret.consumer = consumer;
-            ret.iterator = stream.iterator();
-            consumers.add(ret);
-            LOGGER.info("Created new consumer to connect to Kafka");
-          }
+          KafkaStream<byte[], byte[]> stream = streamList.remove(0);
+          ret.consumer = consumer;
+          ret.iterator = stream.iterator();
+          consumers.add(ret);
+          LOGGER.info("Created new consumer to connect to Kafka");
           return ret;
         } catch (Exception e) {
           throw new FlumeException("Unable to connect to Kafka", e);
@@ -116,9 +114,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   public void start() {
     try {
       LOGGER.info("Starting Kafka Channel: " + getName());
-      synchronized (kafkaConf) {
-        producer = new Producer<String, byte[]>(new ProducerConfig(kafkaConf));
-      }
+      producer = new Producer<String, byte[]>(new ProducerConfig(kafkaConf));
       // We always have just one topic being read by one thread
       LOGGER.info("Topic = " + topic.get());
       topicCountMap.put(topic.get(), 1);
@@ -178,20 +174,18 @@ public class KafkaChannel extends BasicChannelSemantics {
         "Zookeeper Connection must be specified");
     }
     Long timeout = ctx.getLong(TIMEOUT, Long.valueOf(DEFAULT_TIMEOUT));
-    synchronized (kafkaConf) {
-      kafkaConf.putAll(ctx.getSubProperties(KAFKA_PREFIX));
-      kafkaConf.put(GROUP_ID, groupId);
-      kafkaConf.put(BROKER_LIST_KEY, brokerList);
-      kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
-      kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-      kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
-      kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
+    kafkaConf.putAll(ctx.getSubProperties(KAFKA_PREFIX));
+    kafkaConf.put(GROUP_ID, groupId);
+    kafkaConf.put(BROKER_LIST_KEY, brokerList);
+    kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
+    kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
+    kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(10 * timeout));
+    kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
 //    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
 //    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
-      kafkaConf.put("producer.type", "sync");
-      kafkaConf.put("auto.offset.reset", "smallest");
-      LOGGER.info(kafkaConf.toString());
-    }
+    kafkaConf.put("producer.type", "sync");
+    kafkaConf.put("auto.offset.reset", "smallest");
+    LOGGER.info(kafkaConf.toString());
     parseAsFlumeEvent =
       ctx.getBoolean(PARSE_AS_FLUME_EVENT, DEFAULT_PARSE_AS_FLUME_EVENT);
   }
