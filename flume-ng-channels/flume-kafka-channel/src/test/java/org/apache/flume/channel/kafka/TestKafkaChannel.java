@@ -271,7 +271,7 @@ public class TestKafkaChannel {
                     eventsLocal.clear();
                     tx.close();
                     tx = null;
-                    break;
+                    return null;
                   }
                 } else {
                   tx.commit();
