@@ -26,6 +26,7 @@ import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
 import kafka.utils.ZKStringSerializer$;
 import org.I0Itec.zkclient.ZkClient;
+import org.apache.commons.lang.RandomStringUtils;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
@@ -42,19 +43,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TestKafkaChannel {
 
   private static TestUtil testUtil = TestUtil.getInstance();
+  private String topic = null;
+
+  @BeforeClass
+  public static void setupClass() throws Exception {
+    testUtil.prepare();
+
+  }
 
   @Before
   public void setup() throws Exception {
-    testUtil.prepare();
+    topic = RandomStringUtils.randomAlphabetic(10);
     try {
-      createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
+      createTopic(topic);
     } catch (Exception e) {
     }
     Thread.sleep(2000);
   }
 
-  @After
-  public void tearDown() {
+  @AfterClass
+  public static void tearDown() {
     testUtil.tearDown();
   }
 
@@ -91,12 +99,11 @@ public class TestKafkaChannel {
   public void testNoParsingAsFlumeAgent() throws Exception {
     final KafkaChannel channel = startChannel(false);
     Producer<String, byte[]> producer = new Producer<String, byte[]>(
-      new ProducerConfig (channel.getKafkaConf()));
+      new ProducerConfig(channel.getKafkaConf()));
     List<KeyedMessage<String, byte[]>> original = Lists.newArrayList();
     for (int i = 0; i < 50; i++) {
       KeyedMessage<String, byte[]> data = new KeyedMessage<String,
-        byte[]>(KafkaChannelConfiguration.DEFAULT_TOPIC,
-        String.valueOf(i).getBytes());
+        byte[]>(topic, String.valueOf(i).getBytes());
       original.add(data);
     }
     producer.send(original);
@@ -123,6 +130,7 @@ public class TestKafkaChannel {
    * come out. Optionally, 10 events are rolled back,
    * and optionally we restart the agent immediately after and we try to pull it
    * out.
+   *
    * @param rollback
    * @param retryAfterRollback
    * @throws Exception
@@ -330,6 +338,7 @@ public class TestKafkaChannel {
       testUtil.getZkUrl());
     context.put(KafkaChannelConfiguration.PARSE_AS_FLUME_EVENT,
       String.valueOf(parseAsFlume));
+    context.put(KafkaChannelConfiguration.TOPIC, topic);
     return context;
   }
 
