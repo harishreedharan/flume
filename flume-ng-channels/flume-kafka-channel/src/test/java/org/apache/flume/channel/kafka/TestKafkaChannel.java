@@ -271,7 +271,9 @@ public class TestKafkaChannel {
                 startedGettingEvents.set(true);
                 eventsLocal.add(e);
               } else {
-                if (testRollbacks && index == 4 && !rolledBack.get() &&
+                if (testRollbacks &&
+                  index == 4 &&
+                  (!rolledBack.get()) &&
                   startedGettingEvents.get()) {
                   tx.rollback();
                   tx.close();
@@ -297,6 +299,11 @@ public class TestKafkaChannel {
               }
             } catch (Exception ex) {
               eventsLocal.clear();
+              if (tx != null) {
+                tx.rollback();
+                tx.close();
+              }
+              tx = null;
               ex.printStackTrace();
             }
           }

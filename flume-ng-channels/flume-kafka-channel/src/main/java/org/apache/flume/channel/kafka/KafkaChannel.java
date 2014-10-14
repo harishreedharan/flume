@@ -52,7 +52,7 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private final Properties kafkaConf = new Properties();
   private Producer<String, byte[]> producer;
-  private String channelUUID = UUID.randomUUID().toString();
+  private final UUID channelUUID = UUID.randomUUID();
 
   private AtomicReference<String> topic = new AtomicReference<String>();
   private boolean parseAsFlumeEvent = DEFAULT_PARSE_AS_FLUME_EVENT;
@@ -62,11 +62,13 @@ public class KafkaChannel extends BasicChannelSemantics {
   // Track all consumers to close them eventually.
   private final List<ConsumerAndIterator> consumers =
     Collections.synchronizedList(new LinkedList<ConsumerAndIterator>());
-  private final ThreadLocal<List<Event>> failedEvents = new
-    ThreadLocal<List<Event>>() {
+  private final ThreadLocal<FailedEvents> failedEvents = new
+    ThreadLocal<FailedEvents>() {
       @Override
-      protected List<Event> initialValue() {
-        return new LinkedList<Event>();
+      protected FailedEvents initialValue() {
+        FailedEvents failedEvents = new FailedEvents();
+        failedEvents.uuid = channelUUID;
+        return failedEvents;
       }
     };
 
@@ -184,7 +186,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     kafkaConf.put(BROKER_LIST_KEY, brokerList);
     kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
     kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-    kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(10*timeout));
+    kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
     kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
     kafkaConf.put("producer.type", "sync");
     kafkaConf.put("auto.offset.reset", "smallest");
@@ -222,9 +224,15 @@ public class KafkaChannel extends BasicChannelSemantics {
     private final String batchUUID = UUID.randomUUID().toString();
 
     KafkaTransaction() {
-//      if (!consumerAndIter.get().uuid.equals(channelUUID)) {
-//        consumerAndIter.set(createConsumerAndIter());
-//      }
+      if (!consumerAndIter.get().uuid.equals(channelUUID)) {
+        consumerAndIter.get().consumer.shutdown();
+        consumerAndIter.set(createConsumerAndIter());
+      }
+      if(!failedEvents.get().uuid.equals(channelUUID)) {
+        failedEvents.get().events.clear();
+        failedEvents.set(new FailedEvents());
+        failedEvents.get().uuid = channelUUID;
+      }
     }
 
     @Override
@@ -263,8 +271,8 @@ public class KafkaChannel extends BasicChannelSemantics {
         events = Optional.of(new LinkedList<Event>());
       }
       Event e;
-      if (!failedEvents.get().isEmpty()) {
-        e = failedEvents.get().remove(0);
+      if (!failedEvents.get().events.isEmpty()) {
+        e = failedEvents.get().events.remove(0);
       } else {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
@@ -322,7 +330,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if (failedEvents.get().isEmpty()) {
+        if (failedEvents.get().events.isEmpty()) {
           consumerAndIter.get().consumer.commitOffsets();
         }
         events.get().clear();
@@ -337,7 +345,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       if (type.equals(TransactionType.PUT)) {
         serializedEvents.get().clear();
       } else {
-        failedEvents.get().addAll(events.get());
+        failedEvents.get().events.addAll(events.get());
         events.get().clear();
       }
     }
@@ -347,7 +355,12 @@ public class KafkaChannel extends BasicChannelSemantics {
   private class ConsumerAndIterator {
     ConsumerConnector consumer;
     ConsumerIterator<byte[], byte[]> iterator;
-    String uuid;
+    UUID uuid;
+  }
+
+  private class FailedEvents {
+    final List<Event> events = new LinkedList<Event>();
+    UUID uuid;
   }
 
   /**
