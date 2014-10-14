@@ -251,14 +251,15 @@ public class TestKafkaChannel {
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger rolledBackCount = new AtomicInteger(0);
-    final AtomicBoolean rolledBack = new AtomicBoolean(false);
+    final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
+
     for (int k = 0; k < 5; k++) {
       final int index = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
-          final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
           Transaction tx = null;
+          final AtomicBoolean rolledBack = new AtomicBoolean(false);
           final List<Event> eventsLocal = Lists.newLinkedList();
           while (counter.get() < (total - rolledBackCount.get())) {
             if (tx == null) {
