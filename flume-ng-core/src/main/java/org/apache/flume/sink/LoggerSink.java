@@ -18,11 +18,9 @@
 
 package org.apache.flume.sink;
 
-import org.apache.flume.Channel;
-import org.apache.flume.Event;
-import org.apache.flume.EventDeliveryException;
-import org.apache.flume.Sink;
-import org.apache.flume.Transaction;
+import com.google.common.base.Strings;
+import org.apache.flume.*;
+import org.apache.flume.conf.Configurable;
 import org.apache.flume.event.EventHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,9 +37,22 @@ import org.slf4j.LoggerFactory;
  * <p>
  * <b>Configuration options</b>
  * </p>
- * <p>
- * <i>This sink has no configuration parameters.</i>
- * </p>
+ *
+ * <table>
+ * <tr>
+ * <th>Parameter</th>
+ * <th>Description</th>
+ * <th>Unit (data type)</th>
+ * <th>Default</th>
+ * </tr>
+ * <tr>
+ * <td><tt>maxBytesToDump</tt></td>
+ * <td>Maximum number of bytes of the Event body to dump</td>
+ * <td>int</td>
+ * <td>16</td>
+ * </tr>
+ * </table>
+ *
  * <p>
  * <b>Metrics</b>
  * </p>
@@ -49,10 +60,31 @@ import org.slf4j.LoggerFactory;
  * TODO
  * </p>
  */
-public class LoggerSink extends AbstractSink {
+public class LoggerSink extends AbstractSink implements Configurable {
 
   private static final Logger logger = LoggerFactory
       .getLogger(LoggerSink.class);
+
+  // Default Max bytes to dump
+  public static final int DEFAULT_MAX_BYTE_DUMP = 16;
+
+  // Max number of bytes to be dumped
+  private int maxBytesToDump = DEFAULT_MAX_BYTE_DUMP;
+
+  public static final String MAX_BYTES_DUMP_KEY = "maxBytesToDump";
+
+  @Override
+  public void configure(Context context) {
+    String strMaxBytes = context.getString(MAX_BYTES_DUMP_KEY);
+    if(!Strings.isNullOrEmpty(strMaxBytes)) {
+      try {
+        maxBytesToDump = Integer.parseInt(strMaxBytes);
+      } catch (NumberFormatException e) {
+        logger.warn(String.format("Unable to convert %s to integer, using default value(%d) for maxByteToDump",
+                    strMaxBytes, DEFAULT_MAX_BYTE_DUMP));
+      }
+    }
+  }
 
   @Override
   public Status process() throws EventDeliveryException {
@@ -67,7 +99,7 @@ public class LoggerSink extends AbstractSink {
 
       if (event != null) {
         if (logger.isInfoEnabled()) {
-          logger.info("Event: " + EventHelper.dumpEvent(event));
+          logger.info("Event: " + EventHelper.dumpEvent(event, maxBytesToDump));
         }
       } else {
         // No event found, request back-off semantics from the sink runner

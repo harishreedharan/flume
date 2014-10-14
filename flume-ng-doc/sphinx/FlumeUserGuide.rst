@@ -1699,6 +1699,7 @@ Property Name   Default  Description
 ==============  =======  ===========================================
 **channel**     --
 **type**        --       The component type name, needs to be ``logger``
+maxBytesToDump  16       Maximum number of bytes of the Event body to dump
 ==============  =======  ===========================================
 
 Example for agent named a1:
