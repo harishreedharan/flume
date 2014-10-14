@@ -54,7 +54,7 @@ public class TestKafkaChannel {
   @Before
   public void setup() throws Exception {
     boolean topicFound = false;
-    while(!topicFound) {
+    while (!topicFound) {
       topic = RandomStringUtils.randomAlphabetic(8);
       if (!usedTopics.contains(topic)) {
         usedTopics.add(topic);
@@ -83,7 +83,7 @@ public class TestKafkaChannel {
   @Test
   public void testRollbacks() throws Exception {
     final KafkaChannel channel = startChannel(true);
-    writeAndVerify(true, channel);
+    writeAndVerify(true, channel, true);
     channel.stop();
   }
 
@@ -196,6 +196,11 @@ public class TestKafkaChannel {
 
   private void writeAndVerify(final boolean testRollbacks,
     final KafkaChannel channel) throws Exception {
+    writeAndVerify(testRollbacks, channel, false);
+  }
+
+  private void writeAndVerify(final boolean testRollbacks,
+    final KafkaChannel channel, final boolean ignoreDups) throws Exception {
 
     final List<List<Event>> events = createBaseList();
 
@@ -209,7 +214,7 @@ public class TestKafkaChannel {
     Thread.sleep(1000);
     putEvents(channel, events, submitterSvc);
     wait(submitterSvc, 10);
-    verify(eventsPulled);
+    verify(eventsPulled, ignoreDups);
   }
 
   private List<List<Event>> createBaseList() {
@@ -259,13 +264,14 @@ public class TestKafkaChannel {
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger rolledBackCount = new AtomicInteger(0);
+    final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
     final AtomicBoolean rolledBack = new AtomicBoolean(false);
     for (int k = 0; k < 5; k++) {
       final int index = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
-          final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
+
           Transaction tx = null;
           final List<Event> eventsLocal = Lists.newLinkedList();
           while (counter.get() < (total - rolledBackCount.get())) {
@@ -332,8 +338,16 @@ public class TestKafkaChannel {
   }
 
   private void verify(List<Event> eventsPulled) {
+    verify(eventsPulled, false);
+  }
+
+  private void verify(List<Event> eventsPulled, final boolean ignoreDups) {
     Assert.assertFalse(eventsPulled.isEmpty());
-    Assert.assertEquals(50, eventsPulled.size());
+    if (ignoreDups) { //In rare cases, rollbacks can cause duplicates.
+      Assert.assertTrue(eventsPulled.size() >= 50);
+    } else {
+      Assert.assertEquals(50, eventsPulled.size());
+    }
     Set<String> eventStrings = new HashSet<String>();
     for (Event e : eventsPulled) {
       Assert
