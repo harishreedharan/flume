@@ -318,7 +318,7 @@ public class TestKafkaChannel {
 
   private void verify(List<Event> eventsPulled) {
     Assert.assertFalse(eventsPulled.isEmpty());
-//    Assert.assertEquals(50, eventsPulled.size());
+    Assert.assertEquals(50, eventsPulled.size());
     Set<String> eventStrings = new HashSet<String>();
     for (Event e : eventsPulled) {
       Assert
