@@ -26,6 +26,7 @@ import kafka.producer.KeyedMessage;
 import kafka.producer.ProducerConfig;
 import kafka.utils.ZKStringSerializer$;
 import org.I0Itec.zkclient.ZkClient;
+import org.apache.commons.lang.RandomStringUtils;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.Transaction;
@@ -42,19 +43,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TestKafkaChannel {
 
   private static TestUtil testUtil = TestUtil.getInstance();
+  private String topic = null;
+
+  @BeforeClass
+  public static void setupClass() throws Exception {
+    testUtil.prepare();
+  }
 
   @Before
   public void setup() throws Exception {
-    testUtil.prepare();
+    topic = RandomStringUtils.randomAlphabetic(8);
     try {
-      createTopic(KafkaChannelConfiguration.DEFAULT_TOPIC);
+      createTopic(topic);
     } catch (Exception e) {
     }
     Thread.sleep(2000);
   }
 
-  @After
-  public void tearDown() {
+  @AfterClass
+  public static void tearDown() {
     testUtil.tearDown();
   }
 
@@ -91,11 +98,11 @@ public class TestKafkaChannel {
   public void testNoParsingAsFlumeAgent() throws Exception {
     final KafkaChannel channel = startChannel(false);
     Producer<String, byte[]> producer = new Producer<String, byte[]>(
-      new ProducerConfig (channel.getKafkaConf()));
+      new ProducerConfig(channel.getKafkaConf()));
     List<KeyedMessage<String, byte[]>> original = Lists.newArrayList();
     for (int i = 0; i < 50; i++) {
       KeyedMessage<String, byte[]> data = new KeyedMessage<String,
-        byte[]>(KafkaChannelConfiguration.DEFAULT_TOPIC,
+        byte[]>(topic,
         String.valueOf(i).getBytes());
       original.add(data);
     }
@@ -123,6 +130,7 @@ public class TestKafkaChannel {
    * come out. Optionally, 10 events are rolled back,
    * and optionally we restart the agent immediately after and we try to pull it
    * out.
+   *
    * @param rollback
    * @param retryAfterRollback
    * @throws Exception
@@ -162,7 +170,7 @@ public class TestKafkaChannel {
       final List<Event> eventsPulled2 =
         pullEvents(channel3, submitterSvc3, expectedRemaining, false, false);
       wait(submitterSvc3, 5);
-      Assert.assertTrue(eventsPulled2.size() == expectedRemaining);
+      Assert.assertEquals(expectedRemaining, eventsPulled2.size());
       eventsPulled.addAll(eventsPulled2);
       channel3.stop();
       underlying.shutdownNow();
@@ -242,6 +250,7 @@ public class TestKafkaChannel {
     final List<Event> eventsPulled = Collections.synchronizedList(new
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
+    final AtomicInteger rolledBackCount = new AtomicInteger(0);
     final AtomicBoolean rolledBack = new AtomicBoolean(false);
     for (int k = 0; k < 5; k++) {
       final int index = k;
@@ -251,7 +260,7 @@ public class TestKafkaChannel {
           final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
           Transaction tx = null;
           final List<Event> eventsLocal = Lists.newLinkedList();
-          while (counter.get() < total) {
+          while (counter.get() < (total - rolledBackCount.get())) {
             if (tx == null) {
               tx = channel.getTransaction();
               tx.begin();
@@ -265,24 +274,29 @@ public class TestKafkaChannel {
                 if (testRollbacks && index == 1 && !rolledBack.get() &&
                   startedGettingEvents.get()) {
                   tx.rollback();
-                  System.out.println("Rolledback");
+                  tx.close();
+                  tx = null;
                   rolledBack.set(true);
+                  final int eventsLocalSize = eventsLocal.size();
+                  eventsLocal.clear();
                   if (!retryAfterRollback) {
-                    eventsLocal.clear();
-                    tx.close();
-                    tx = null;
+                    rolledBackCount.set(eventsLocalSize);
                     return null;
                   }
                 } else {
                   tx.commit();
+                  tx.close();
+                  tx = null;
                   eventsPulled.addAll(eventsLocal);
                   counter.getAndAdd(eventsLocal.size());
+                  System.out.println("Counter: " + counter
+                    .toString());
+                  eventsLocal.clear();
                 }
-                eventsLocal.clear();
-                tx.close();
-                tx = null;
+
               }
             } catch (Exception ex) {
+              eventsLocal.clear();
               ex.printStackTrace();
             }
           }
@@ -304,7 +318,7 @@ public class TestKafkaChannel {
 
   private void verify(List<Event> eventsPulled) {
     Assert.assertFalse(eventsPulled.isEmpty());
-    Assert.assertTrue(eventsPulled.size() == 50);
+    Assert.assertEquals(50, eventsPulled.size());
     Set<String> eventStrings = new HashSet<String>();
     for (Event e : eventsPulled) {
       Assert
@@ -330,6 +344,7 @@ public class TestKafkaChannel {
       testUtil.getZkUrl());
     context.put(KafkaChannelConfiguration.PARSE_AS_FLUME_EVENT,
       String.valueOf(parseAsFlume));
+    context.put(KafkaChannelConfiguration.TOPIC, topic);
     return context;
   }
 

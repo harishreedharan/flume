@@ -52,6 +52,7 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private final Properties kafkaConf = new Properties();
   private Producer<String, byte[]> producer;
+  private String channelUUID = UUID.randomUUID().toString();
 
   private AtomicReference<String> topic = new AtomicReference<String>();
   private boolean parseAsFlumeEvent = DEFAULT_PARSE_AS_FLUME_EVENT;
@@ -86,27 +87,9 @@ public class KafkaChannel extends BasicChannelSemantics {
    */
   private final ThreadLocal<ConsumerAndIterator> consumerAndIter = new
     ThreadLocal<ConsumerAndIterator>() {
-
       @Override
       public ConsumerAndIterator initialValue() {
-        try {
-          ConsumerConfig consumerConfig = new ConsumerConfig(kafkaConf);
-          ConsumerConnector consumer =
-            Consumer.createJavaConsumerConnector(consumerConfig);
-          Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
-            consumer.createMessageStreams(topicCountMap);
-          final List<KafkaStream<byte[], byte[]>> streamList = consumerMap
-            .get(topic.get());
-          ConsumerAndIterator ret = new ConsumerAndIterator();
-          KafkaStream<byte[], byte[]> stream = streamList.remove(0);
-          ret.consumer = consumer;
-          ret.iterator = stream.iterator();
-          consumers.add(ret);
-          LOGGER.info("Created new consumer to connect to Kafka");
-          return ret;
-        } catch (Exception e) {
-          throw new FlumeException("Unable to connect to Kafka", e);
-        }
+        return createConsumerAndIter();
       }
     };
 
@@ -145,6 +128,28 @@ public class KafkaChannel extends BasicChannelSemantics {
     return new KafkaTransaction();
   }
 
+  private ConsumerAndIterator createConsumerAndIter() {
+    try {
+      ConsumerConfig consumerConfig = new ConsumerConfig(kafkaConf);
+      ConsumerConnector consumer =
+        Consumer.createJavaConsumerConnector(consumerConfig);
+      Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap =
+        consumer.createMessageStreams(topicCountMap);
+      final List<KafkaStream<byte[], byte[]>> streamList = consumerMap
+        .get(topic.get());
+      ConsumerAndIterator ret = new ConsumerAndIterator();
+      ret.uuid = channelUUID;
+      KafkaStream<byte[], byte[]> stream = streamList.remove(0);
+      ret.consumer = consumer;
+      ret.iterator = stream.iterator();
+      consumers.add(ret);
+      LOGGER.info("Created new consumer to connect to Kafka");
+      return ret;
+    } catch (Exception e) {
+      throw new FlumeException("Unable to connect to Kafka", e);
+    }
+  }
+
   Properties getKafkaConf() {
     return kafkaConf;
   }
@@ -179,10 +184,8 @@ public class KafkaChannel extends BasicChannelSemantics {
     kafkaConf.put(BROKER_LIST_KEY, brokerList);
     kafkaConf.put(ZOOKEEPER_CONNECT, zkConnect);
     kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
-    kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(10 * timeout));
+    kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(10*timeout));
     kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
-//    kafkaConf.put(MESSAGE_SERIALIZER_KEY, MESSAGE_SERIALIZER);
-//    kafkaConf.put(KEY_SERIALIZER_KEY, KEY_SERIALIZER);
     kafkaConf.put("producer.type", "sync");
     kafkaConf.put("auto.offset.reset", "smallest");
     LOGGER.info(kafkaConf.toString());
@@ -192,12 +195,13 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private enum TransactionType {
     PUT,
-    TAKE
+    TAKE,
+    NONE
   }
 
   private class KafkaTransaction extends BasicTransactionSemantics {
 
-    private TransactionType type;
+    private TransactionType type = TransactionType.NONE;
     // For Puts
     private Optional<ByteArrayOutputStream> tempOutStream = Optional
       .absent();
@@ -206,7 +210,6 @@ public class KafkaChannel extends BasicChannelSemantics {
     private Optional<LinkedList<byte[]>> serializedEvents = Optional.absent();
     // For take transactions, deserialize and hold them till commit goes through
     private Optional<LinkedList<Event>> events = Optional.absent();
-    private boolean removed = false;
     private Optional<SpecificDatumWriter<AvroFlumeEvent>> writer =
       Optional.absent();
     private Optional<SpecificDatumReader<AvroFlumeEvent>> reader =
@@ -216,6 +219,13 @@ public class KafkaChannel extends BasicChannelSemantics {
     // is null
     private BinaryEncoder encoder = null;
     private BinaryDecoder decoder = null;
+    private final String batchUUID = UUID.randomUUID().toString();
+
+    KafkaTransaction() {
+      if (!consumerAndIter.get().uuid.equals(channelUUID)) {
+        consumerAndIter.set(createConsumerAndIter());
+      }
+    }
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
@@ -255,7 +265,6 @@ public class KafkaChannel extends BasicChannelSemantics {
       Event e;
       if (!failedEvents.get().isEmpty()) {
         e = failedEvents.get().remove(0);
-        removed = true;
       } else {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
@@ -275,7 +284,6 @@ public class KafkaChannel extends BasicChannelSemantics {
             e = EventBuilder.withBody(it.next().message(),
               Collections.EMPTY_MAP);
           }
-          removed = true;
         } catch (ConsumerTimeoutException ex) {
           if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Timed out while waiting for data to come from Kafka",
@@ -294,13 +302,17 @@ public class KafkaChannel extends BasicChannelSemantics {
 
     @Override
     protected void doCommit() throws InterruptedException {
+      if (type.equals(TransactionType.NONE)) {
+        return;
+      }
       if (type.equals(TransactionType.PUT)) {
         try {
           List<KeyedMessage<String, byte[]>> messages = new
             ArrayList<KeyedMessage<String, byte[]>>(serializedEvents.get()
             .size());
           for (byte[] event : serializedEvents.get()) {
-            messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
+            messages.add(new KeyedMessage<String, byte[]>(topic.get(), null,
+              batchUUID, event));
           }
           producer.send(messages);
           serializedEvents.get().clear();
@@ -310,7 +322,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if (failedEvents.get().isEmpty() && removed) {
+        if (failedEvents.get().isEmpty()) {
           consumerAndIter.get().consumer.commitOffsets();
         }
         events.get().clear();
@@ -319,6 +331,9 @@ public class KafkaChannel extends BasicChannelSemantics {
 
     @Override
     protected void doRollback() throws InterruptedException {
+      if (type.equals(TransactionType.NONE)) {
+        return;
+      }
       if (type.equals(TransactionType.PUT)) {
         serializedEvents.get().clear();
       } else {
@@ -332,6 +347,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   private class ConsumerAndIterator {
     ConsumerConnector consumer;
     ConsumerIterator<byte[], byte[]> iterator;
+    String uuid;
   }
 
   /**
