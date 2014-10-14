@@ -224,11 +224,11 @@ public class KafkaChannel extends BasicChannelSemantics {
     private final String batchUUID = UUID.randomUUID().toString();
 
     KafkaTransaction() {
-      if (!consumerAndIter.get().uuid.equals(channelUUID)) {
+      if (!(consumerAndIter.get().uuid.equals(channelUUID))) {
         consumerAndIter.get().consumer.shutdown();
         consumerAndIter.set(createConsumerAndIter());
       }
-      if(!failedEvents.get().uuid.equals(channelUUID)) {
+      if(!(failedEvents.get().uuid.equals(channelUUID))) {
         failedEvents.get().events.clear();
         failedEvents.set(new FailedEvents());
         failedEvents.get().uuid = channelUUID;

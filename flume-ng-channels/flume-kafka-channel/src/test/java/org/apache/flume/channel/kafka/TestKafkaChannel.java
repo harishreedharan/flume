@@ -44,6 +44,7 @@ public class TestKafkaChannel {
 
   private static TestUtil testUtil = TestUtil.getInstance();
   private String topic = null;
+  private final Set<String> usedTopics = new HashSet<String>();
 
   @BeforeClass
   public static void setupClass() throws Exception {
@@ -52,7 +53,14 @@ public class TestKafkaChannel {
 
   @Before
   public void setup() throws Exception {
-    topic = RandomStringUtils.randomAlphabetic(8);
+    boolean topicFound = false;
+    while(!topicFound) {
+      topic = RandomStringUtils.randomAlphabetic(8);
+      if (!usedTopics.contains(topic)) {
+        usedTopics.add(topic);
+        topicFound = true;
+      }
+    }
     try {
       createTopic(topic);
     } catch (Exception e) {
@@ -251,15 +259,14 @@ public class TestKafkaChannel {
       ArrayList<Event>(50));
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger rolledBackCount = new AtomicInteger(0);
-    final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
-
+    final AtomicBoolean rolledBack = new AtomicBoolean(false);
     for (int k = 0; k < 5; k++) {
       final int index = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
+          final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
           Transaction tx = null;
-          final AtomicBoolean rolledBack = new AtomicBoolean(false);
           final List<Event> eventsLocal = Lists.newLinkedList();
           while (counter.get() < (total - rolledBackCount.get())) {
             if (tx == null) {
