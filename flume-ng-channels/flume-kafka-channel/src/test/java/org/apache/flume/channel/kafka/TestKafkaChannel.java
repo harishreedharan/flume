@@ -66,7 +66,6 @@ public class TestKafkaChannel {
       createTopic(topic);
     } catch (Exception e) {
     }
-    Thread.sleep(2000);
     latch = new CountDownLatch(5);
   }
 
@@ -77,17 +76,31 @@ public class TestKafkaChannel {
 
   @Test
   public void testSuccess() throws Exception {
-    final KafkaChannel channel = startChannel(true);
-    writeAndVerify(false, channel, true);
-    channel.stop();
+    doTestSuccessRollback(false, false);
+  }
+
+  @Test
+  public void testSuccessInterleave() throws Exception {
+    doTestSuccessRollback(false, true);
   }
 
   @Test
   public void testRollbacks() throws Exception {
+    doTestSuccessRollback(true, false);
+  }
+
+  @Test
+  public void testRollbacksInterleave() throws Exception {
+    doTestSuccessRollback(true, true);
+  }
+
+  private void doTestSuccessRollback(final boolean rollback,
+    final boolean interleave) throws Exception {
     final KafkaChannel channel = startChannel(true);
-    writeAndVerify(true, channel, true);
+    writeAndVerify(rollback, channel, interleave);
     channel.stop();
   }
+
 
   @Test
   public void testStopAndStart() throws Exception {
@@ -112,7 +125,7 @@ public class TestKafkaChannel {
     List<KeyedMessage<String, byte[]>> original = Lists.newArrayList();
     for (int i = 0; i < 50; i++) {
       KeyedMessage<String, byte[]> data = new KeyedMessage<String,
-        byte[]>(topic,
+        byte[]>(topic, null, RandomStringUtils.randomAlphabetic(6),
         String.valueOf(i).getBytes());
       original.add(data);
     }
@@ -157,34 +170,26 @@ public class TestKafkaChannel {
     int completed = 0;
     wait(submitterSvc, 5);
     channel.stop();
-    underlying.shutdownNow();
-    underlying = Executors.newCachedThreadPool();
-    ExecutorCompletionService<Void> submitterSvc2 =
-      new ExecutorCompletionService<Void>(underlying);
     final KafkaChannel channel2 = startChannel(true);
     int total = 50;
     if (rollback && !retryAfterRollback) {
       total = 40;
     }
     final List<Event> eventsPulled =
-      pullEvents(channel2, submitterSvc2, total, rollback, retryAfterRollback);
-    wait(submitterSvc2, 5);
+      pullEvents(channel2, submitterSvc, total, rollback, retryAfterRollback);
+    wait(submitterSvc, 5);
     channel2.stop();
-    underlying.shutdownNow();
     if (!retryAfterRollback && rollback) {
-      underlying = Executors.newCachedThreadPool();
-      ExecutorCompletionService<Void> submitterSvc3 =
-        new ExecutorCompletionService<Void>(underlying);
       final KafkaChannel channel3 = startChannel(true);
       int expectedRemaining = 50 - eventsPulled.size();
       final List<Event> eventsPulled2 =
-        pullEvents(channel3, submitterSvc3, expectedRemaining, false, false);
-      wait(submitterSvc3, 5);
+        pullEvents(channel3, submitterSvc, expectedRemaining, false, false);
+      wait(submitterSvc, 5);
       Assert.assertEquals(expectedRemaining, eventsPulled2.size());
       eventsPulled.addAll(eventsPulled2);
       channel3.stop();
-      underlying.shutdownNow();
     }
+    underlying.shutdownNow();
     verify(eventsPulled);
   }
 
@@ -202,7 +207,7 @@ public class TestKafkaChannel {
   }
 
   private void writeAndVerify(final boolean testRollbacks,
-    final KafkaChannel channel, final boolean ignoreDups) throws Exception {
+    final KafkaChannel channel, final boolean interleave) throws Exception {
 
     final List<List<Event>> events = createBaseList();
 
@@ -211,18 +216,24 @@ public class TestKafkaChannel {
         .newCachedThreadPool());
 
     putEvents(channel, events, submitterSvc);
-    wait(submitterSvc, 5);
 
-    System.out.println("Ready to pull");
+    if (interleave) {
+      wait(submitterSvc, 5);
+    }
+
     ExecutorCompletionService<Void> submitterSvc2 =
       new ExecutorCompletionService<Void>(Executors
         .newCachedThreadPool());
+
     final List<Event> eventsPulled =
       pullEvents(channel, submitterSvc2, 50, testRollbacks, true);
-    wait(submitterSvc2, 5);
-    Thread.sleep(1000);
 
-    verify(eventsPulled, ignoreDups);
+    if (!interleave) {
+      wait(submitterSvc, 5);
+    }
+    wait(submitterSvc2, 5);
+
+    verify(eventsPulled);
   }
 
   private List<List<Event>> createBaseList() {
@@ -279,7 +290,7 @@ public class TestKafkaChannel {
       final int index = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
-        public Void call() throws Exception{
+        public Void call() throws Exception {
           Transaction tx = null;
           final List<Event> eventsLocal = Lists.newLinkedList();
           int takenByThisThread = 0;
@@ -317,8 +328,6 @@ public class TestKafkaChannel {
                   tx = null;
                   eventsPulled.addAll(eventsLocal);
                   counter.getAndAdd(eventsLocal.size());
-                  System.out.println("Counter: " + counter
-                    .toString() + " rb: " + rolledBackCount.toString());
                   eventsLocal.clear();
                 }
               }
@@ -350,16 +359,8 @@ public class TestKafkaChannel {
   }
 
   private void verify(List<Event> eventsPulled) {
-    verify(eventsPulled, false);
-  }
-
-  private void verify(List<Event> eventsPulled, final boolean ignoreDups) {
     Assert.assertFalse(eventsPulled.isEmpty());
-    if (ignoreDups) { //In rare cases, rollbacks can cause duplicates.
-      Assert.assertTrue(eventsPulled.size() >= 50);
-    } else {
-      Assert.assertEquals(50, eventsPulled.size());
-    }
+    Assert.assertEquals(50, eventsPulled.size());
     Set<String> eventStrings = new HashSet<String>();
     for (Event e : eventsPulled) {
       Assert

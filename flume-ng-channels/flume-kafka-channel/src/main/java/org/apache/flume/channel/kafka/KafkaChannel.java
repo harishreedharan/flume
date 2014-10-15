@@ -18,6 +18,7 @@
  */
 package org.apache.flume.channel.kafka;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import kafka.consumer.*;
 import kafka.javaapi.consumer.ConsumerConnector;
@@ -195,6 +196,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   // tests due to rebalancing - making testing tricky. In production,
   // this is less of an issue as
   // rebalancing would happen only on startup.
+  @VisibleForTesting
   void registerThread() {
     consumerAndIter.get();
   }
@@ -327,10 +329,10 @@ public class KafkaChannel extends BasicChannelSemantics {
             ArrayList<KeyedMessage<String, byte[]>>(serializedEvents.get()
             .size());
           for (byte[] event : serializedEvents.get()) {
-            messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
+            messages.add(new KeyedMessage<String, byte[]>(topic.get(), null,
+              batchUUID, event));
           }
           producer.send(messages);
-          LOGGER.info("Snet");
           serializedEvents.get().clear();
         } catch (Exception ex) {
           LOGGER.warn("Sending events to Kafka failed", ex);
