@@ -343,11 +343,11 @@ public class TestKafkaChannel {
 
   private void verify(List<Event> eventsPulled, final boolean ignoreDups) {
     Assert.assertFalse(eventsPulled.isEmpty());
-//    if (ignoreDups) { //In rare cases, rollbacks can cause duplicates.
-//      Assert.assertTrue(eventsPulled.size() >= 50);
-//    } else {
+    if (ignoreDups) { //In rare cases, rollbacks can cause duplicates.
+      Assert.assertTrue(eventsPulled.size() >= 50);
+    } else {
       Assert.assertEquals(50, eventsPulled.size());
-//    }
+    }
     Set<String> eventStrings = new HashSet<String>();
     for (Event e : eventsPulled) {
       Assert
