@@ -62,15 +62,6 @@ public class KafkaChannel extends BasicChannelSemantics {
   // Track all consumers to close them eventually.
   private final List<ConsumerAndIterator> consumers =
     Collections.synchronizedList(new LinkedList<ConsumerAndIterator>());
-  private final ThreadLocal<FailedEvents> failedEvents = new
-    ThreadLocal<FailedEvents>() {
-      @Override
-      protected FailedEvents initialValue() {
-        FailedEvents failedEvents = new FailedEvents();
-        failedEvents.uuid = channelUUID;
-        return failedEvents;
-      }
-    };
 
   /* Each ConsumerConnector commit will commit all partitions owned by it. To
    * ensure that each partition is only committed when all events are
@@ -116,7 +107,7 @@ public class KafkaChannel extends BasicChannelSemantics {
   public void stop() {
     for (ConsumerAndIterator c : consumers) {
       try {
-        c.consumer.shutdown();
+        decommissionConsumerAndIterator(c);
       } catch (Exception ex) {
         LOGGER.warn("Error while shutting down consumer.", ex);
       }
@@ -139,11 +130,9 @@ public class KafkaChannel extends BasicChannelSemantics {
         consumer.createMessageStreams(topicCountMap);
       final List<KafkaStream<byte[], byte[]>> streamList = consumerMap
         .get(topic.get());
-      ConsumerAndIterator ret = new ConsumerAndIterator();
-      ret.uuid = channelUUID;
       KafkaStream<byte[], byte[]> stream = streamList.remove(0);
-      ret.consumer = consumer;
-      ret.iterator = stream.iterator();
+      ConsumerAndIterator ret =
+        new ConsumerAndIterator(consumer, stream.iterator(), channelUUID);
       consumers.add(ret);
       LOGGER.info("Created new consumer to connect to Kafka");
       return ret;
@@ -195,11 +184,19 @@ public class KafkaChannel extends BasicChannelSemantics {
       ctx.getBoolean(PARSE_AS_FLUME_EVENT, DEFAULT_PARSE_AS_FLUME_EVENT);
   }
 
+  private void decommissionConsumerAndIterator(ConsumerAndIterator c) {
+    if (c.failedEvents.isEmpty()) {
+      c.consumer.commitOffsets();
+    }
+    c.consumer.shutdown();
+  }
+
   private enum TransactionType {
     PUT,
     TAKE,
     NONE
   }
+
 
   private class KafkaTransaction extends BasicTransactionSemantics {
 
@@ -225,13 +222,8 @@ public class KafkaChannel extends BasicChannelSemantics {
 
     KafkaTransaction() {
       if (!(consumerAndIter.get().uuid.equals(channelUUID))) {
-        consumerAndIter.get().consumer.shutdown();
+        decommissionConsumerAndIterator(consumerAndIter.get());
         consumerAndIter.set(createConsumerAndIter());
-      }
-      if(!(failedEvents.get().uuid.equals(channelUUID))) {
-        failedEvents.get().events.clear();
-        failedEvents.set(new FailedEvents());
-        failedEvents.get().uuid = channelUUID;
       }
     }
 
@@ -271,8 +263,8 @@ public class KafkaChannel extends BasicChannelSemantics {
         events = Optional.of(new LinkedList<Event>());
       }
       Event e;
-      if (!failedEvents.get().events.isEmpty()) {
-        e = failedEvents.get().events.remove(0);
+      if (!consumerAndIter.get().failedEvents.isEmpty()) {
+        e = consumerAndIter.get().failedEvents.removeFirst();
       } else {
         try {
           ConsumerIterator<byte[], byte[]> it = consumerAndIter.get().iterator;
@@ -330,7 +322,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if (failedEvents.get().events.isEmpty()) {
+        if (consumerAndIter.get().failedEvents.isEmpty()) {
           consumerAndIter.get().consumer.commitOffsets();
         }
         events.get().clear();
@@ -345,7 +337,7 @@ public class KafkaChannel extends BasicChannelSemantics {
       if (type.equals(TransactionType.PUT)) {
         serializedEvents.get().clear();
       } else {
-        failedEvents.get().events.addAll(events.get());
+        consumerAndIter.get().failedEvents.addAll(events.get());
         events.get().clear();
       }
     }
@@ -353,14 +345,19 @@ public class KafkaChannel extends BasicChannelSemantics {
 
 
   private class ConsumerAndIterator {
-    ConsumerConnector consumer;
-    ConsumerIterator<byte[], byte[]> iterator;
-    UUID uuid;
-  }
+    final ConsumerConnector consumer;
+    final ConsumerIterator<byte[], byte[]> iterator;
+    final UUID uuid;
+    final LinkedList<Event> failedEvents = new LinkedList<Event>();
 
-  private class FailedEvents {
-    final List<Event> events = new LinkedList<Event>();
-    UUID uuid;
+    ConsumerAndIterator(ConsumerConnector consumerConnector,
+      ConsumerIterator<byte[], byte[]> iterator, UUID uuid) {
+      this.consumer = consumerConnector;
+      this.iterator = iterator;
+      this.uuid = uuid;
+    }
+
+
   }
 
   /**
