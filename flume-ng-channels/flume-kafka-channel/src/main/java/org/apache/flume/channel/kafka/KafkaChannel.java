@@ -188,6 +188,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     if (c.failedEvents.isEmpty()) {
       c.consumer.commitOffsets();
     }
+    c.failedEvents.clear();
     c.consumer.shutdown();
   }
 
