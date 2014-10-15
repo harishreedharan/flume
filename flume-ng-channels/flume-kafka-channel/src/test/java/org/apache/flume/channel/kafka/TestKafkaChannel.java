@@ -210,12 +210,18 @@ public class TestKafkaChannel {
       new ExecutorCompletionService<Void>(Executors
         .newCachedThreadPool());
 
-    final List<Event> eventsPulled =
-      pullEvents(channel, submitterSvc, 50, testRollbacks, true);
-
-    Thread.sleep(1000);
     putEvents(channel, events, submitterSvc);
-    wait(submitterSvc, 10);
+    wait(submitterSvc, 5);
+
+    System.out.println("Ready to pull");
+    ExecutorCompletionService<Void> submitterSvc2 =
+      new ExecutorCompletionService<Void>(Executors
+        .newCachedThreadPool());
+    final List<Event> eventsPulled =
+      pullEvents(channel, submitterSvc2, 50, testRollbacks, true);
+    wait(submitterSvc2, 5);
+    Thread.sleep(1000);
+
     verify(eventsPulled, ignoreDups);
   }
 
@@ -264,6 +270,7 @@ public class TestKafkaChannel {
     final boolean testRollbacks, final boolean retryAfterRollback) {
     final List<Event> eventsPulled = Collections.synchronizedList(new
       ArrayList<Event>(50));
+    final CyclicBarrier barrier = new CyclicBarrier(5);
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger rolledBackCount = new AtomicInteger(0);
     final AtomicBoolean startedGettingEvents = new AtomicBoolean(false);
@@ -272,9 +279,13 @@ public class TestKafkaChannel {
       final int index = k;
       submitterSvc.submit(new Callable<Void>() {
         @Override
-        public Void call() {
+        public Void call() throws Exception{
           Transaction tx = null;
           final List<Event> eventsLocal = Lists.newLinkedList();
+          int takenByThisThread = 0;
+          channel.registerThread();
+          Thread.sleep(1000);
+          barrier.await();
           while (counter.get() < (total - rolledBackCount.get())) {
             if (tx == null) {
               tx = channel.getTransaction();
@@ -321,6 +332,7 @@ public class TestKafkaChannel {
               ex.printStackTrace();
             }
           }
+          // Close txn.
           return null;
         }
       });

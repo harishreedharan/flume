@@ -52,7 +52,7 @@ public class KafkaChannel extends BasicChannelSemantics {
 
   private final Properties kafkaConf = new Properties();
   private Producer<String, byte[]> producer;
-  private final UUID channelUUID = UUID.randomUUID();
+  private final String channelUUID = UUID.randomUUID().toString();
 
   private AtomicReference<String> topic = new AtomicReference<String>();
   private boolean parseAsFlumeEvent = DEFAULT_PARSE_AS_FLUME_EVENT;
@@ -121,7 +121,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     return new KafkaTransaction();
   }
 
-  private ConsumerAndIterator createConsumerAndIter() {
+  private synchronized ConsumerAndIterator createConsumerAndIter() {
     try {
       ConsumerConfig consumerConfig = new ConsumerConfig(kafkaConf);
       ConsumerConnector consumer =
@@ -177,8 +177,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
     kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
     kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
-    kafkaConf.put("producer.type", "sync");
-    kafkaConf.put("auto.offset.reset", "smallest");
+    kafkaConf.setProperty("auto.offset.reset", "smallest");
     LOGGER.info(kafkaConf.toString());
     parseAsFlumeEvent =
       ctx.getBoolean(PARSE_AS_FLUME_EVENT, DEFAULT_PARSE_AS_FLUME_EVENT);
@@ -190,6 +189,14 @@ public class KafkaChannel extends BasicChannelSemantics {
     }
     c.failedEvents.clear();
     c.consumer.shutdown();
+  }
+
+  // Force a consumer to be initialized. There are  many duplicates in
+  // tests due to rebalancing - making testing tricky. In production,
+  // this is less of an issue as
+  // rebalancing would happen only on startup.
+  void registerThread() {
+    consumerAndIter.get();
   }
 
   private enum TransactionType {
@@ -220,12 +227,9 @@ public class KafkaChannel extends BasicChannelSemantics {
     private BinaryEncoder encoder = null;
     private BinaryDecoder decoder = null;
     private final String batchUUID = UUID.randomUUID().toString();
+    private boolean eventTaken = false;
 
     KafkaTransaction() {
-      if (!(consumerAndIter.get().uuid.equals(channelUUID))) {
-        decommissionConsumerAndIterator(consumerAndIter.get());
-        consumerAndIter.set(createConsumerAndIter());
-      }
     }
 
     @Override
@@ -260,6 +264,15 @@ public class KafkaChannel extends BasicChannelSemantics {
     @Override
     protected Event doTake() throws InterruptedException {
       type = TransactionType.TAKE;
+      try {
+        if (!(consumerAndIter.get().uuid.equals(channelUUID))) {
+          LOGGER.info("UUID mismatch, creating new consumer");
+          decommissionConsumerAndIterator(consumerAndIter.get());
+          consumerAndIter.remove();
+        }
+      } catch (Throwable ex) {
+        LOGGER.error("Exexex");
+      }
       if (!events.isPresent()) {
         events = Optional.of(new LinkedList<Event>());
       }
@@ -285,6 +298,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             e = EventBuilder.withBody(it.next().message(),
               Collections.EMPTY_MAP);
           }
+
         } catch (ConsumerTimeoutException ex) {
           if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Timed out while waiting for data to come from Kafka",
@@ -297,6 +311,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       }
+      eventTaken = true;
       events.get().add(e);
       return e;
     }
@@ -312,10 +327,10 @@ public class KafkaChannel extends BasicChannelSemantics {
             ArrayList<KeyedMessage<String, byte[]>>(serializedEvents.get()
             .size());
           for (byte[] event : serializedEvents.get()) {
-            messages.add(new KeyedMessage<String, byte[]>(topic.get(), null,
-              batchUUID, event));
+            messages.add(new KeyedMessage<String, byte[]>(topic.get(), event));
           }
           producer.send(messages);
+          LOGGER.info("Snet");
           serializedEvents.get().clear();
         } catch (Exception ex) {
           LOGGER.warn("Sending events to Kafka failed", ex);
@@ -323,7 +338,7 @@ public class KafkaChannel extends BasicChannelSemantics {
             ex);
         }
       } else {
-        if (consumerAndIter.get().failedEvents.isEmpty()) {
+        if (consumerAndIter.get().failedEvents.isEmpty() && eventTaken) {
           consumerAndIter.get().consumer.commitOffsets();
         }
         events.get().clear();
@@ -348,17 +363,15 @@ public class KafkaChannel extends BasicChannelSemantics {
   private class ConsumerAndIterator {
     final ConsumerConnector consumer;
     final ConsumerIterator<byte[], byte[]> iterator;
-    final UUID uuid;
+    final String uuid;
     final LinkedList<Event> failedEvents = new LinkedList<Event>();
 
     ConsumerAndIterator(ConsumerConnector consumerConnector,
-      ConsumerIterator<byte[], byte[]> iterator, UUID uuid) {
+      ConsumerIterator<byte[], byte[]> iterator, String uuid) {
       this.consumer = consumerConnector;
       this.iterator = iterator;
       this.uuid = uuid;
     }
-
-
   }
 
   /**

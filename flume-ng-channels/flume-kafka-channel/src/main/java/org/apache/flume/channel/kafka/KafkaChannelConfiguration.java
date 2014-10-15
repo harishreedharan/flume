@@ -33,7 +33,7 @@ public class KafkaChannelConfiguration {
   public static final String DEFAULT_GROUP_ID = "flume";
   public static final String DEFAULT_TOPIC = "flume-channel";
   public static final String TIMEOUT = "timeout";
-  public static final String DEFAULT_TIMEOUT = "10";
+  public static final String DEFAULT_TIMEOUT = "100";
   public static final String CONSUMER_TIMEOUT = "consumer.timeout.ms";
   public static final String MESSAGE_SERIALIZER =
     "kafka.serializer.DefaultEncoder";
