@@ -76,7 +76,7 @@ public class TestKafkaChannel {
   @Test
   public void testSuccess() throws Exception {
     final KafkaChannel channel = startChannel(true);
-    writeAndVerify(false, channel);
+    writeAndVerify(false, channel, true);
     channel.stop();
   }
 
