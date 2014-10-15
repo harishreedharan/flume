@@ -45,6 +45,7 @@ public class TestKafkaChannel {
   private static TestUtil testUtil = TestUtil.getInstance();
   private String topic = null;
   private final Set<String> usedTopics = new HashSet<String>();
+  private CountDownLatch latch = null;
 
   @BeforeClass
   public static void setupClass() throws Exception {
@@ -66,6 +67,7 @@ public class TestKafkaChannel {
     } catch (Exception e) {
     }
     Thread.sleep(2000);
+    latch = new CountDownLatch(5);
   }
 
   @AfterClass
@@ -271,7 +273,6 @@ public class TestKafkaChannel {
       submitterSvc.submit(new Callable<Void>() {
         @Override
         public Void call() {
-
           Transaction tx = null;
           final List<Event> eventsLocal = Lists.newLinkedList();
           while (counter.get() < (total - rolledBackCount.get())) {
@@ -306,10 +307,9 @@ public class TestKafkaChannel {
                   eventsPulled.addAll(eventsLocal);
                   counter.getAndAdd(eventsLocal.size());
                   System.out.println("Counter: " + counter
-                    .toString());
+                    .toString() + " rb: " + rolledBackCount.toString());
                   eventsLocal.clear();
                 }
-
               }
             } catch (Exception ex) {
               eventsLocal.clear();
