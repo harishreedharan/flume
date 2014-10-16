@@ -50,6 +50,7 @@ public class TestKafkaChannel {
   @BeforeClass
   public static void setupClass() throws Exception {
     testUtil.prepare();
+    Thread.sleep(2500);
   }
 
   @Before
