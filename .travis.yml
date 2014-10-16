@@ -1,4 +1,5 @@
 language: java
 jdk:
   - oraclejdk7
+install: cd flume-ng-sdk;mvn clean install;cd ../flume-ng-core;mvn clean install;cd ../flume-ng-sinks/flume-ng-kafka-sink;mvn clean install
 script: cd flume-ng-channels/flume-kafka-channel;./run-kafkatest
