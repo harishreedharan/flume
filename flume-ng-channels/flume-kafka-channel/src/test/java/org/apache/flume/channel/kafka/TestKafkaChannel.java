@@ -66,6 +66,7 @@ public class TestKafkaChannel {
       createTopic(topic);
     } catch (Exception e) {
     }
+    Thread.sleep(2500);
     latch = new CountDownLatch(5);
   }
 
