@@ -99,7 +99,7 @@ public class KafkaChannel extends BasicChannelSemantics {
     } catch (Exception e) {
       LOGGER.error("Could not start producer");
       throw new FlumeException("Unable to create Kafka Connections. " +
-        "Check whether the ZooKeeper server is up and that the " +
+        "Check whether Kafka Brokers are up and that the " +
         "Flume agent can connect to it.", e);
     }
   }
@@ -178,10 +178,20 @@ public class KafkaChannel extends BasicChannelSemantics {
     kafkaConf.put(AUTO_COMMIT_ENABLED, String.valueOf(false));
     kafkaConf.put(CONSUMER_TIMEOUT, String.valueOf(timeout));
     kafkaConf.put(REQUIRED_ACKS_KEY, "-1");
-    kafkaConf.setProperty("auto.offset.reset", "smallest");
     LOGGER.info(kafkaConf.toString());
     parseAsFlumeEvent =
       ctx.getBoolean(PARSE_AS_FLUME_EVENT, DEFAULT_PARSE_AS_FLUME_EVENT);
+
+    boolean readSmallest = ctx.getBoolean(READ_SMALLEST_OFFSET,
+      DEFAULT_READ_SMALLEST_OFFSET);
+    // If the data is to be parsed as Flume events, we always read the smallest.
+    // Else, we read the configuration, which by default reads the largest.
+    if (parseAsFlumeEvent || readSmallest) {
+      // readSmallest is eval-ed only if parseAsFlumeEvent is false.
+      // The default is largest, so we don't need to set it explicitly.
+      kafkaConf.put("auto.offset.reset", "smallest");
+    }
+
   }
 
   private void decommissionConsumerAndIterator(ConsumerAndIterator c) {
@@ -231,9 +241,6 @@ public class KafkaChannel extends BasicChannelSemantics {
     private final String batchUUID = UUID.randomUUID().toString();
     private boolean eventTaken = false;
 
-    KafkaTransaction() {
-    }
-
     @Override
     protected void doPut(Event event) throws InterruptedException {
       type = TransactionType.PUT;
@@ -272,8 +279,8 @@ public class KafkaChannel extends BasicChannelSemantics {
           decommissionConsumerAndIterator(consumerAndIter.get());
           consumerAndIter.remove();
         }
-      } catch (Throwable ex) {
-        LOGGER.error("Exexex");
+      } catch (Exception ex) {
+        LOGGER.warn("Error while shutting down consumer", ex);
       }
       if (!events.isPresent()) {
         events = Optional.of(new LinkedList<Event>());

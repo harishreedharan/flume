@@ -388,6 +388,7 @@ public class TestKafkaChannel {
       testUtil.getZkUrl());
     context.put(KafkaChannelConfiguration.PARSE_AS_FLUME_EVENT,
       String.valueOf(parseAsFlume));
+    context.put(KafkaChannelConfiguration.READ_SMALLEST_OFFSET, "true");
     context.put(KafkaChannelConfiguration.TOPIC, topic);
     return context;
   }

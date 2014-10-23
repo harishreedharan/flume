@@ -35,13 +35,10 @@ public class KafkaChannelConfiguration {
   public static final String TIMEOUT = "timeout";
   public static final String DEFAULT_TIMEOUT = "100";
   public static final String CONSUMER_TIMEOUT = "consumer.timeout.ms";
-  public static final String MESSAGE_SERIALIZER =
-    "kafka.serializer.DefaultEncoder";
-  public static final String KEY_SERIALIZER =
-    "kafka.serializer.StringEncoder";
-  public static final String MESSAGE_SERIALIZER_KEY = "serializer.class";
-  public static final String KEY_SERIALIZER_KEY = "key.serializer.class";
 
   public static final String PARSE_AS_FLUME_EVENT = "parseAsFlumeEvent";
   public static final boolean DEFAULT_PARSE_AS_FLUME_EVENT = true;
+
+  public static final String READ_SMALLEST_OFFSET = "readSmallestOffset";
+  public static final boolean DEFAULT_READ_SMALLEST_OFFSET = false;
 }
